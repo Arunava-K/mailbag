@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Subscribe — test form</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+        background: #fafafa; color: #18181b;
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      .card {
+        width: 100%; max-width: 380px; background: #fff;
+        border: 1px solid #e4e4e7; border-radius: 14px; padding: 28px;
+        box-shadow: 0 8px 30px rgba(0,0,0,.06);
+      }
+      h1 { margin: 0 0 4px; font-size: 18px; }
+      p.sub { margin: 0 0 18px; color: #71717a; font-size: 13px; }
+      label { display: block; font-size: 12px; font-weight: 500; color: #52525b; margin-bottom: 4px; }
+      input[type=email] {
+        width: 100%; padding: 9px 12px; font-size: 14px;
+        border: 1px solid #d4d4d8; border-radius: 8px; outline: none;
+      }
+      input[type=email]:focus { border-color: #a1a1aa; }
+      button {
+        margin-top: 12px; width: 100%; padding: 10px;
+        background: #18181b; color: #fff; border: 0; border-radius: 8px;
+        font-size: 14px; font-weight: 500; cursor: pointer;
+      }
+      button:hover { background: #3f3f46; }
+      button:disabled { opacity: .5; cursor: default; }
+      #mc-msg { margin: 12px 0 0; font-size: 13px; min-height: 20px; }
+      #mc-msg.ok { color: #047857; }
+      #mc-msg.err { color: #be123c; }
+      .hp { display: none; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Get the newsletter</h1>
+      <p class="sub">One email when something good ships. No spam.</p>
+      <form id="mc-form">
+        <label for="email">Email</label>
+        <input id="email" type="email" name="email" required placeholder="you@example.com" autocomplete="email" />
+        <!-- honeypot: humans leave it empty -->
+        <input class="hp" type="text" name="website" tabindex="-1" autocomplete="off" />
+        <button type="submit" id="mc-btn">Subscribe</button>
+        <p id="mc-msg"></p>
+      </form>
+    </div>
+    <script>
+      // Override via query params: submit.html?api=https://collect.yourdomain.com&key=pk_xxx
+      var params = new URLSearchParams(location.search);
+      var COLLECTOR = params.get("api") || "http://localhost:8080";
+      var LIST_KEY = params.get("key") || "pk_de4977f6772aade859c360a0"; // Demo Newsletter (local)
+
+      var form = document.getElementById("mc-form");
+      var msg = document.getElementById("mc-msg");
+      var btn = document.getElementById("mc-btn");
+
+      function say(text, cls) {
+        msg.textContent = text;
+        msg.className = cls || "";
+      }
+
+      form.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        var fd = new FormData(form);
+        btn.disabled = true;
+        say("Subscribing…");
+        try {
+          var res = await fetch(COLLECTOR + "/v1/subscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              list_key: LIST_KEY,
+              email: fd.get("email"),
+              website: fd.get("website"),
+              metadata: JSON.stringify({ source: "submit.html" })
+            })
+          });
+          var data = await res.json();
+          if (data.status === "pending") say("Check your inbox to confirm.", "ok");
+          else if (data.status === "confirmed") say("You're already subscribed.", "ok");
+          else say(data.error || "Something went wrong.", "err");
+        } catch (err) {
+          say("Could not reach the collector at " + COLLECTOR, "err");
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>
