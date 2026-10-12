@@ -1,0 +1,14 @@
+services:
+  collector:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - collector-data:/data
+    # Dokploy: expose via its reverse proxy (Traefik). No ports needed there.
+    # Local dev: uncomment to test.
+    # ports:
+    #   - "8080:8080"
+
+volumes:
+  collector-data:
