@@ -4,6 +4,7 @@ services:
     restart: unless-stopped
     env_file: .env
     volumes:
+      # Only used in local-SQLite mode. Unused when TURSO_DATABASE_URL is set.
       - collector-data:/data
     # Dokploy: expose via its reverse proxy (Traefik). No ports needed there.
     # Local dev: uncomment to test.

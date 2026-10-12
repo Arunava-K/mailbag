@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"mailcollector/internal/config"
 
 	_ "modernc.org/sqlite"
+	_ "github.com/tursodatabase/libsql-client-go/libsql"
 )
 
-const schema = `
-CREATE TABLE IF NOT EXISTS lists (
+var statements = []string{
+	`CREATE TABLE IF NOT EXISTS lists (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   type TEXT NOT NULL DEFAULT 'newsletter',
@@ -21,9 +25,8 @@ CREATE TABLE IF NOT EXISTS lists (
   welcome_body TEXT NOT NULL DEFAULT '',
   confirm_redirect TEXT NOT NULL DEFAULT '',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS contacts (
+)`,
+	`CREATE TABLE IF NOT EXISTS contacts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   list_id TEXT NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
   email TEXT NOT NULL,
@@ -33,30 +36,52 @@ CREATE TABLE IF NOT EXISTS contacts (
   confirmed_at DATETIME,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(list_id, email)
-);
-CREATE INDEX IF NOT EXISTS idx_contacts_list ON contacts(list_id);
-
-CREATE TABLE IF NOT EXISTS tokens (
+)`,
+	`CREATE INDEX IF NOT EXISTS idx_contacts_list ON contacts(list_id)`,
+	`CREATE TABLE IF NOT EXISTS tokens (
   token TEXT PRIMARY KEY,
   list_id TEXT NOT NULL,
   email TEXT NOT NULL,
   expires_at DATETIME NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-`
+)`,
+}
 
-func Open(dataDir string) (*sql.DB, error) {
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		return nil, err
+// Open uses Turso when TURSO_DATABASE_URL is set, else local SQLite file.
+// Keeps database/sql so handlers stay unchanged.
+func Open(cfg config.Config) (*sql.DB, error) {
+	var database *sql.DB
+	var err error
+	if cfg.TursoURL != "" {
+		url := strings.TrimSpace(cfg.TursoURL)
+		// libsql driver expects authToken as query param.
+		if cfg.TursoToken != "" && !strings.Contains(url, "authToken=") {
+			sep := "?"
+			if strings.Contains(url, "?") {
+				sep = "&"
+			}
+			url += sep + "authToken=" + cfg.TursoToken
+		}
+		database, err = sql.Open("libsql", url)
+		if err != nil {
+			return nil, err
+		}
+		database.SetMaxOpenConns(10)
+	} else {
+		if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+			return nil, err
+		}
+		path := filepath.Join(cfg.DataDir, "collector.db")
+		database, err = sql.Open("sqlite", path)
+		if err != nil {
+			return nil, err
+		}
+		database.SetMaxOpenConns(1)
 	}
-	path := filepath.Join(dataDir, "collector.db")
-	database, err := sql.Open("sqlite", path)
-	if err != nil {
-		return nil, err
-	}
-	database.SetMaxOpenConns(1)
-	if _, err := database.Exec(schema); err != nil {
-		return nil, fmt.Errorf("schema: %w", err)
+	for _, s := range statements {
+		if _, err := database.Exec(s); err != nil {
+			return nil, fmt.Errorf("schema: %w", err)
+		}
 	}
 	return database, nil
 }

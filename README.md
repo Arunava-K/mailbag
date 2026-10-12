@@ -1,6 +1,6 @@
 # MailCollector V1 — headless email collection
 
-Single Go binary + SQLite. Native forms on your sites POST to it. No iframe styling issues.
+Single Go binary. Native forms on your sites POST to it. DB: Turso (set `TURSO_*`) or local SQLite fallback.
 
 ## API
 
@@ -22,11 +22,12 @@ See `examples/native-form.html`. Keep your own CSS, just POST JSON with your `li
 
 1. Push this folder to a git repo.
 2. Dokploy → New App → Docker Compose, point at repo. It uses `docker-compose.yml` as-is.
-3. Volumes: `collector-data:/data` is already declared (SQLite persists across redeploys).
+3. Volumes: `collector-data:/data` covers local-SQLite mode. Unused when `TURSO_DATABASE_URL` is set.
 4. Domains: add `collect.yourdomain.com` in Dokploy, TLS on.
 5. Env (copy from `.env.example`):
    - `BASE_URL=https://collect.yourdomain.com` (confirm links break without this)
    - `ADMIN_API_KEY=<long random>`
+   - `TURSO_DATABASE_URL=libsql://xxx.turso.io` + `TURSO_AUTH_TOKEN=...` (recommended)
    - `SMTP_HOST/PORT/USER/PASS/FROM` and/or `PLUNK_API_KEY`
 6. Deploy. Test: `curl https://collect.yourdomain.com/health` → `{"status":"ok"}`.
 7. Create first list:

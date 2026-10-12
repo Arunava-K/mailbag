@@ -12,7 +12,7 @@ import (
 
 func main() {
 	cfg := config.Load()
-	database, err := db.Open(cfg.DataDir)
+	database, err := db.Open(cfg)
 	if err != nil {
 		log.Fatalf("db: %v", err)
 	}
@@ -21,6 +21,13 @@ func main() {
 	handlers.NewPublic(database, m, cfg).Routes(mux)
 	handlers.NewAdmin(database, cfg.AdminAPIKey).Routes(mux)
 
-	log.Printf("mailcollector on :%s base=%s", cfg.Port, cfg.BaseURL)
+	log.Printf("mailcollector on :%s base=%s db=%s", cfg.Port, cfg.BaseURL, dbMode(cfg))
 	log.Fatal(http.ListenAndServe(":"+cfg.Port, mux))
+}
+
+func dbMode(cfg config.Config) string {
+	if cfg.TursoURL != "" {
+		return "turso"
+	}
+	return "sqlite"
 }

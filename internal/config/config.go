@@ -8,6 +8,9 @@ type Config struct {
 	AdminAPIKey string
 	BaseURL     string
 
+	TursoURL   string
+	TursoToken string
+
 	SMTPHost string
 	SMTPPort string
 	SMTPUser string
@@ -29,6 +32,8 @@ func Load() Config {
 		SMTPPass:    os.Getenv("SMTP_PASS"),
 		SMTPFrom:    env("SMTP_FROM", "hello@yourdomain.com"),
 		PlunkAPIKey: os.Getenv("PLUNK_API_KEY"),
+		TursoURL:    os.Getenv("TURSO_DATABASE_URL"),
+		TursoToken:  os.Getenv("TURSO_AUTH_TOKEN"),
 	}
 }
 
