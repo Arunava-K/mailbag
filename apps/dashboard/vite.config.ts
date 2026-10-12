@@ -1,3 +1,4 @@
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -5,7 +6,7 @@ import { defineConfig } from "vite";
 // Production (Cloudflare Pages): set VITE_COLLECTOR_URL to
 // https://collect.yourdomain.com (needs /admin CORS — phase 2 API gap).
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
     proxy: {
