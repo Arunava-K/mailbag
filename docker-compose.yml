@@ -1,6 +1,6 @@
 services:
   collector:
-    build: .
+    build: ./apps/api
     restart: unless-stopped
     env_file: .env
     volumes:

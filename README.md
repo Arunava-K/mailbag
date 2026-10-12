@@ -1,4 +1,9 @@
-# MailCollector V1 — headless email collection
+# MailCollector — headless email collection (monorepo)
+
+```
+apps/api/        Go collector API (Dokploy on VPS, Turso or SQLite)
+apps/dashboard/  React + Vite control panel (Cloudflare Pages)
+```
 
 Single Go binary. Native forms on your sites POST to it. DB: Turso (set `TURSO_*`) or local SQLite fallback.
 
@@ -16,7 +21,7 @@ CORS is open (`*`) on `/v1/*` so any Cloudflare Pages static site can `fetch()` 
 
 ## Frontend usage (Cloudflare Pages)
 
-See `examples/native-form.html`. Keep your own CSS, just POST JSON with your `list_key` (`pk_...`).
+See `apps/api/examples/native-form.html`. Keep your own CSS, just POST JSON with your `list_key` (`pk_...`).
 
 ## Dokploy deploy (same VPS)
 
@@ -46,6 +51,9 @@ Footprint: ~15 MB image, ~20–30 MB RAM idle. Safe to co-host on your existing 
 cp .env.example .env   # set BASE_URL=http://localhost:8080, ADMIN_API_KEY=test
 docker compose up --build
 curl localhost:8080/health
+
+# dashboard (needs the api above on :8080)
+cd apps/dashboard && npm install && npm run dev  # -> :5173, /api proxied
 ```
 
 ## Notes
