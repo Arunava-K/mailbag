@@ -11,6 +11,10 @@ type Config struct {
 	TursoURL   string
 	TursoToken string
 
+	// Comma-separated origins allowed to call /admin/* from a browser
+	// (e.g. Cloudflare Pages dashboard). Empty = same-origin/proxy only.
+	AdminOrigins string
+
 	SMTPHost string
 	SMTPPort string
 	SMTPUser string
@@ -34,6 +38,8 @@ func Load() Config {
 		PlunkAPIKey: os.Getenv("PLUNK_API_KEY"),
 		TursoURL:    os.Getenv("TURSO_DATABASE_URL"),
 		TursoToken:  os.Getenv("TURSO_AUTH_TOKEN"),
+
+		AdminOrigins: os.Getenv("ADMIN_ORIGINS"),
 	}
 }
 
