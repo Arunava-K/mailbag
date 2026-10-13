@@ -1,4 +1,4 @@
-module mailcollector
+module mailbag
 
 go 1.23
 

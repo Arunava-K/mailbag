@@ -1,4 +1,4 @@
-# MailCollector — headless email collection (monorepo)
+# Mailbag — headless email collection (monorepo)
 
 ```
 apps/api/        Go collector API (Dokploy on VPS, Turso or SQLite)
@@ -27,7 +27,7 @@ See `apps/api/examples/native-form.html`. Keep your own CSS, just POST JSON with
 
 1. Push this folder to a git repo.
 2. Dokploy → New App → Docker Compose, point at repo. It uses `docker-compose.yml` as-is.
-3. Volumes: `collector-data:/data` covers local-SQLite mode. Unused when `TURSO_DATABASE_URL` is set.
+3. Volumes: `mailbag-data:/data` covers local-SQLite mode. Unused when `TURSO_DATABASE_URL` is set.
 4. Domains: add `collect.yourdomain.com` in Dokploy, TLS on.
 5. Env (copy from `.env.example`):
    - `BASE_URL=https://collect.yourdomain.com` (confirm links break without this)

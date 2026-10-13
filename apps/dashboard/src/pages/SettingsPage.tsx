@@ -17,7 +17,7 @@ export function SettingsPage({
         <h3 className="text-[13px] font-semibold text-zinc-900">Connection</h3>
         <dl className="mt-3 space-y-2 text-[13px]">
           <div className="flex justify-between gap-4">
-            <dt className="text-zinc-500">Collector</dt>
+            <dt className="text-zinc-500">Mailbag</dt>
             <dd className="font-mono text-xs text-zinc-800">{collectorUrl}</dd>
           </div>
           <div className="flex items-center justify-between gap-4">

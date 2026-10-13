@@ -55,7 +55,7 @@ export const emptyListInput: CreateListInput = {
 };
 
 const base = () =>
-  (import.meta.env.VITE_COLLECTOR_URL as string | undefined)?.replace(/\/$/, "") || "/api";
+  (import.meta.env.VITE_MAILBAG_URL as string | undefined)?.replace(/\/$/, "") || "/api";
 
 export class ApiError extends Error {
   status: number;
@@ -121,15 +121,15 @@ export const api = {
 };
 
 export function embedSnippet(collectorUrl: string, listKey: string): string {
-  return `<form id="mc-form">
+  return `<form id="mb-form">
   <input type="email" name="email" required placeholder="you@example.com" />
   <input type="text" name="website" style="display:none" tabindex="-1" autocomplete="off" />
   <button type="submit">Subscribe</button>
-  <p id="mc-msg"></p>
+  <p id="mb-msg"></p>
 </form>
 <script>
   (function () {
-    var form = document.getElementById("mc-form");
+    var form = document.getElementById("mb-form");
     form.addEventListener("submit", async function (e) {
       e.preventDefault();
       var fd = new FormData(form);
@@ -144,7 +144,7 @@ export function embedSnippet(collectorUrl: string, listKey: string): string {
         })
       });
       var data = await res.json();
-      document.getElementById("mc-msg").textContent =
+      document.getElementById("mb-msg").textContent =
         data.status === "pending" ? "Check your inbox to confirm." :
         data.status === "confirmed" ? "You're already subscribed." :
         (data.error || "Something went wrong.");

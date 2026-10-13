@@ -8,7 +8,7 @@ import (
 	"net/smtp"
 	"time"
 
-	"mailcollector/internal/config"
+	"mailbag/internal/config"
 )
 
 type Mailer struct {

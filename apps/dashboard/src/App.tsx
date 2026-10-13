@@ -14,20 +14,20 @@ import "./index.css";
 type View = Screen | { name: "list"; key: string };
 
 const collectorUrl = () => {
-  const v = (import.meta.env.VITE_COLLECTOR_URL as string | undefined) || "/api";
+  const v = (import.meta.env.VITE_MAILBAG_URL as string | undefined) || "/api";
   return v.replace(/\/api$/, "") || window.location.origin;
 };
 
 function loadStars(): string[] {
   try {
-    return JSON.parse(localStorage.getItem("mc-starred") || "[]") as string[];
+    return JSON.parse(localStorage.getItem("mb-starred") || "[]") as string[];
   } catch {
     return [];
   }
 }
 
 export default function App() {
-  const [adminKey, setAdminKey] = useState(() => localStorage.getItem("mc-admin-key") || "");
+  const [adminKey, setAdminKey] = useState(() => localStorage.getItem("mb-admin-key") || "");
   const [view, setView] = useState<View>("overview");
   const [lists, setLists] = useState<MailList[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -85,7 +85,7 @@ export default function App() {
   const toggleStar = useCallback((k: string) => {
     setStarred((s) => {
       const next = s.includes(k) ? s.filter((x) => x !== k) : [...s, k];
-      localStorage.setItem("mc-starred", JSON.stringify(next));
+      localStorage.setItem("mb-starred", JSON.stringify(next));
       return next;
     });
   }, []);
@@ -144,7 +144,7 @@ export default function App() {
             <SettingsPage
               collectorUrl={collectorUrl()} adminKey={adminKey} apiOk={apiOk} toast={toast}
               onLock={() => {
-                localStorage.removeItem("mc-admin-key");
+                localStorage.removeItem("mb-admin-key");
                 setAdminKey("");
               }}
             />

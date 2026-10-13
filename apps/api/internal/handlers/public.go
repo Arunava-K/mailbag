@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"mailcollector/internal/config"
-	"mailcollector/internal/mailer"
+	"mailbag/internal/config"
+	"mailbag/internal/mailer"
 )
 
 // Public handles /v1/* (no auth, CORS open).

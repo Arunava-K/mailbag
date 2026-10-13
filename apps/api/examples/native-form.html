@@ -1,15 +1,15 @@
 <!-- Native-style form: paste into any Cloudflare Pages site, style with your own CSS. -->
-<form id="mc-form">
+<form id="mb-form">
   <input type="email" name="email" required placeholder="you@example.com" />
   <!-- honeypot: keep hidden with CSS -->
   <input type="text" name="website" style="display:none" tabindex="-1" autocomplete="off" />
   <button type="submit">Subscribe</button>
-  <p id="mc-msg"></p>
+  <p id="mb-msg"></p>
 </form>
 <script>
   const COLLECTOR = "https://collect.yourdomain.com";
   const LIST_KEY = "pk_REPLACE_ME";
-  document.getElementById("mc-form").addEventListener("submit", async (e) => {
+  document.getElementById("mb-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     const res = await fetch(COLLECTOR + "/v1/subscribe", {
@@ -23,7 +23,7 @@
       }),
     });
     const data = await res.json();
-    document.getElementById("mc-msg").textContent =
+    document.getElementById("mb-msg").textContent =
       data.status === "pending" ? "Check your inbox to confirm." :
       data.status === "confirmed" ? "You're already subscribed." :
       (data.error || "Something went wrong.");

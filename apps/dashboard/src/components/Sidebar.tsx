@@ -165,7 +165,7 @@ export function Sidebar(props: {
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-sm font-bold text-white">M</span>
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px] font-semibold text-zinc-900">MailCollector</div>
+              <div className="truncate text-[13px] font-semibold text-zinc-900">Mailbag</div>
               <div className="text-[11px] text-zinc-500">{props.lists.length} lists</div>
             </div>
           )}
@@ -198,7 +198,7 @@ export function Sidebar(props: {
             >
               <div className="flex items-center gap-2 border-b border-zinc-100 px-2 py-3">
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-900 text-sm font-bold text-white">M</span>
-                <div className="text-[13px] font-semibold text-zinc-900">MailCollector</div>
+                <div className="text-[13px] font-semibold text-zinc-900">Mailbag</div>
               </div>
               <div className="flex-1 overflow-hidden pt-2">
                 <NavBody {...props} go={pick} openList={openList} rail={false} />

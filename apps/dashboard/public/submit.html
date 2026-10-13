@@ -31,9 +31,9 @@
       }
       button:hover { background: #3f3f46; }
       button:disabled { opacity: .5; cursor: default; }
-      #mc-msg { margin: 12px 0 0; font-size: 13px; min-height: 20px; }
-      #mc-msg.ok { color: #047857; }
-      #mc-msg.err { color: #be123c; }
+      #mb-msg { margin: 12px 0 0; font-size: 13px; min-height: 20px; }
+      #mb-msg.ok { color: #047857; }
+      #mb-msg.err { color: #be123c; }
       .hp { display: none; }
     </style>
   </head>
@@ -41,13 +41,13 @@
     <div class="card">
       <h1>Get the newsletter</h1>
       <p class="sub">One email when something good ships. No spam.</p>
-      <form id="mc-form">
+      <form id="mb-form">
         <label for="email">Email</label>
         <input id="email" type="email" name="email" required placeholder="you@example.com" autocomplete="email" />
         <!-- honeypot: humans leave it empty -->
         <input class="hp" type="text" name="website" tabindex="-1" autocomplete="off" />
-        <button type="submit" id="mc-btn">Subscribe</button>
-        <p id="mc-msg"></p>
+        <button type="submit" id="mb-btn">Subscribe</button>
+        <p id="mb-msg"></p>
       </form>
     </div>
     <script>
@@ -56,9 +56,9 @@
       var COLLECTOR = params.get("api") || "http://localhost:8080";
       var LIST_KEY = params.get("key") || "pk_de4977f6772aade859c360a0"; // Demo Newsletter (local)
 
-      var form = document.getElementById("mc-form");
-      var msg = document.getElementById("mc-msg");
-      var btn = document.getElementById("mc-btn");
+      var form = document.getElementById("mb-form");
+      var msg = document.getElementById("mb-msg");
+      var btn = document.getElementById("mb-btn");
 
       function say(text, cls) {
         msg.textContent = text;

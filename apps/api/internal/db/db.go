@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"mailcollector/internal/config"
+	"mailbag/internal/config"
 
 	_ "modernc.org/sqlite"
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
@@ -71,7 +71,7 @@ func Open(cfg config.Config) (*sql.DB, error) {
 		if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 			return nil, err
 		}
-		path := filepath.Join(cfg.DataDir, "collector.db")
+		path := filepath.Join(cfg.DataDir, "mailbag.db")
 		database, err = sql.Open("sqlite", path)
 		if err != nil {
 			return nil, err

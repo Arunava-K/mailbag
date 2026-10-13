@@ -9,13 +9,13 @@ export function KeyGate({ onUnlock }: { onUnlock: (key: string) => void }) {
         onSubmit={(e) => {
           e.preventDefault();
           if (value.trim()) {
-            localStorage.setItem("mc-admin-key", value.trim());
+            localStorage.setItem("mb-admin-key", value.trim());
             onUnlock(value.trim());
           }
         }}
       >
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-900 text-base font-bold text-white">M</div>
-        <h1 className="mt-3 text-[15px] font-semibold text-zinc-900">MailCollector</h1>
+        <h1 className="mt-3 text-[15px] font-semibold text-zinc-900">Mailbag</h1>
         <p className="mt-0.5 text-[13px] text-zinc-500">Enter ADMIN_API_KEY to manage lists.</p>
         <input
           type="password"

@@ -4,10 +4,10 @@ import (
 	"log"
 	"net/http"
 
-	"mailcollector/internal/config"
-	"mailcollector/internal/db"
-	"mailcollector/internal/handlers"
-	"mailcollector/internal/mailer"
+	"mailbag/internal/config"
+	"mailbag/internal/db"
+	"mailbag/internal/handlers"
+	"mailbag/internal/mailer"
 )
 
 func main() {
@@ -21,7 +21,7 @@ func main() {
 	handlers.NewPublic(database, m, cfg).Routes(mux)
 	handlers.NewAdmin(database, cfg.AdminAPIKey, cfg.AdminOrigins).Routes(mux)
 
-	log.Printf("mailcollector on :%s base=%s db=%s", cfg.Port, cfg.BaseURL, dbMode(cfg))
+	log.Printf("mailbag on :%s base=%s db=%s", cfg.Port, cfg.BaseURL, dbMode(cfg))
 	log.Fatal(http.ListenAndServe(":"+cfg.Port, mux))
 }
 
