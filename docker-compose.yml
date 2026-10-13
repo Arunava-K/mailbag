@@ -1,27 +1,18 @@
+# Production shape: pulls CI-built images from GHCR.
+# Built by .github/workflows/docker.yml on every push to main.
+# Dokploy: Compose app on this file. Set TAG to pin a build (default: latest).
 services:
   mailbag:
-    build: ./apps/api
+    image: ghcr.io/arunava-k/mailbag-api:${TAG:-latest}
     restart: unless-stopped
     env_file: .env
     volumes:
       # Only used in local-SQLite mode. Unused when TURSO_DATABASE_URL is set.
       - mailbag-data:/data
-    # Dokploy: expose via its reverse proxy (Traefik). No ports needed there.
-    # Local dev: uncomment to test.
-    # ports:
-    #   - "8080:8080"
 
   dashboard:
-    build:
-      context: ./apps/dashboard
-      args:
-        # Baked into the JS at build time. Dokploy: set as env/build var.
-        VITE_MAILBAG_URL: ${VITE_MAILBAG_URL:-/api}
+    image: ghcr.io/arunava-k/mailbag-dashboard:${TAG:-latest}
     restart: unless-stopped
-    # Dokploy: expose via its reverse proxy (Traefik). No ports needed there.
-    # Local dev: uncomment to test.
-    # ports:
-    #   - "3000:80"
 
 volumes:
   mailbag-data:

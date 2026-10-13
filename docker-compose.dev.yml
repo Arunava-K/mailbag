@@ -1,0 +1,15 @@
+# Local dev: build from source + expose ports.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  mailbag:
+    build: ./apps/api
+    ports:
+      - "8080:8080"
+
+  dashboard:
+    build:
+      context: ./apps/dashboard
+      args:
+        VITE_MAILBAG_URL: ${VITE_MAILBAG_URL:-/api}
+    ports:
+      - "3000:80"
