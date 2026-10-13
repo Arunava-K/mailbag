@@ -28,16 +28,16 @@ See `apps/api/examples/native-form.html`. Keep your own CSS, just POST JSON with
 1. Push this folder to a git repo.
 2. Dokploy → New App → Docker Compose, point at repo. It uses `docker-compose.yml` as-is.
 3. Volumes: `mailbag-data:/data` covers local-SQLite mode. Unused when `TURSO_DATABASE_URL` is set.
-4. Domains: add `collect.yourdomain.com` in Dokploy, TLS on.
+4. Domains: add `mailbag-api.steinerandco.space` (API) and `mailbag.steinerandco.space` (dashboard) in Dokploy, TLS on.
 5. Env (copy from `.env.example`):
-   - `BASE_URL=https://collect.yourdomain.com` (confirm links break without this)
+   - `BASE_URL=https://mailbag-api.steinerandco.space` (confirm links break without this)
    - `ADMIN_API_KEY=<long random>`
    - `TURSO_DATABASE_URL=libsql://xxx.turso.io` + `TURSO_AUTH_TOKEN=...` (recommended)
    - `SMTP_HOST/PORT/USER/PASS/FROM` and/or `PLUNK_API_KEY`
-6. Deploy. Test: `curl https://collect.yourdomain.com/health` → `{"status":"ok"}`.
+6. Deploy. Test: `curl https://mailbag-api.steinerandco.space/health` → `{"status":"ok"}`.
 7. Create first list:
    ```bash
-   curl -X POST https://collect.yourdomain.com/admin/lists \
+   curl -X POST https://mailbag-api.steinerandco.space/admin/lists \
      -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json" \
      -d '{"name":"My Newsletter","type":"newsletter","sender_name":"Me","sender_email":"hello@yourdomain.com","provider":"smtp"}'
    ```

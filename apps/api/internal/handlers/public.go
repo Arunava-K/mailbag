@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -50,6 +51,24 @@ func (p *Public) allow(ip string) bool {
 	return true
 }
 
+// clientIP keys the rate limiter on the real client, not the reverse proxy.
+// Behind Dokploy/Traefik every RemoteAddr is the proxy, so X-Forwarded-For
+// (Traefik sets it) comes first, then Cloudflare, then the socket address.
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if first := strings.TrimSpace(strings.Split(xff, ",")[0]); first != "" {
+			return first
+		}
+	}
+	if cf := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); cf != "" {
+		return cf
+	}
+	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return h
+	}
+	return r.RemoteAddr
+}
+
 func (p *Public) cors(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -88,10 +107,7 @@ func (p *Public) subscribe(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 405, map[string]string{"error": "method not allowed"})
 		return
 	}
-	ip := r.Header.Get("CF-Connecting-IP")
-	if ip == "" {
-		ip = strings.Split(r.RemoteAddr, ":")[0]
-	}
+	ip := clientIP(r)
 	if !p.allow(ip) {
 		writeJSON(w, 429, map[string]string{"error": "too many requests"})
 		return
