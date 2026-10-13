@@ -1,4 +1,4 @@
-<!-- Native-style form: paste into any Cloudflare Pages site, style with your own CSS. -->
+<!-- Native-style form: paste into any static site, style with your own CSS. -->
 <form id="mb-form">
   <input type="email" name="email" required placeholder="you@example.com" />
   <!-- honeypot: keep hidden with CSS -->
@@ -7,7 +7,7 @@
   <p id="mb-msg"></p>
 </form>
 <script>
-  const COLLECTOR = "https://collect.yourdomain.com";
+  const COLLECTOR = "https://mailbag-api.steinerandco.space"; // your API URL
   const LIST_KEY = "pk_REPLACE_ME";
   document.getElementById("mb-form").addEventListener("submit", async (e) => {
     e.preventDefault();

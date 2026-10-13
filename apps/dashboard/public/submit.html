@@ -51,10 +51,16 @@
       </form>
     </div>
     <script>
-      // Override via query params: submit.html?api=https://collect.yourdomain.com&key=pk_xxx
+      // Override via query params: submit.html?api=https://mailbag-api.steinerandco.space&key=pk_xxx
+      // No params on localhost -> local API; anywhere else -> production API.
       var params = new URLSearchParams(location.search);
-      var COLLECTOR = params.get("api") || "http://localhost:8080";
-      var LIST_KEY = params.get("key") || "pk_de4977f6772aade859c360a0"; // Demo Newsletter (local)
+      var LIST_KEY = params.get("key") || "";
+      var COLLECTOR = params.get("api") || defaultApi();
+      function defaultApi() {
+        var h = window.location.hostname;
+        if (h === "localhost" || h === "127.0.0.1") return "http://localhost:8080";
+        return "https://mailbag-api.steinerandco.space";
+      }
 
       var form = document.getElementById("mb-form");
       var msg = document.getElementById("mb-msg");
@@ -67,6 +73,10 @@
 
       form.addEventListener("submit", async function (e) {
         e.preventDefault();
+        if (!LIST_KEY) {
+          say("Missing list key — add ?key=pk_... to the URL.", "err");
+          return;
+        }
         var fd = new FormData(form);
         btn.disabled = true;
         say("Subscribing…");
