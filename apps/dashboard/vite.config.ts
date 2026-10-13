@@ -1,12 +1,15 @@
+import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// Local dev: /api proxies to the Go collector (avoids CORS).
-// Production (Cloudflare Pages): set VITE_MAILBAG_URL to
-// https://collect.yourdomain.com (needs /admin CORS — phase 2 API gap).
+// Local dev: /api proxies to the Go API (avoids CORS).
+// Production (Dokploy): VITE_MAILBAG_URL is baked in at build time.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: { "@": path.resolve(__dirname, "src") },
+  },
   server: {
     port: 5173,
     proxy: {

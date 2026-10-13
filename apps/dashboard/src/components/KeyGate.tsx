@@ -1,33 +1,79 @@
 import { useState } from "react";
+import { Mailbox } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { api } from "../lib/api";
 
-export function KeyGate({ onUnlock }: { onUnlock: (key: string) => void }) {
+export function KeyGate({
+  collectorUrl,
+  onUnlock,
+}: {
+  collectorUrl: string;
+  onUnlock: (key: string) => void;
+}) {
   const [value, setValue] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const key = value.trim();
+    if (!key || checking) return;
+    setChecking(true);
+    setError("");
+    try {
+      await api.lists(key);
+      localStorage.setItem("mb-admin-key", key);
+      onUnlock(key);
+    } catch {
+      setError("That key didn't work — check ADMIN_API_KEY and try again.");
+    } finally {
+      setChecking(false);
+    }
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#fafafa] p-6">
-      <form
-        className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white p-6 shadow-sm"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (value.trim()) {
-            localStorage.setItem("mb-admin-key", value.trim());
-            onUnlock(value.trim());
-          }
-        }}
-      >
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-900 text-base font-bold text-white">M</div>
-        <h1 className="mt-3 text-[15px] font-semibold text-zinc-900">Mailbag</h1>
-        <p className="mt-0.5 text-[13px] text-zinc-500">Enter ADMIN_API_KEY to manage lists.</p>
-        <input
-          type="password"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="admin key"
-          className="mt-4 w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-zinc-400"
-        />
-        <button type="submit" className="mt-3 w-full rounded-lg bg-zinc-900 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-zinc-700">
-          Unlock
-        </button>
-      </form>
+    <div className="astrix-dashboard flex min-h-svh items-center justify-center bg-background p-6">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Mailbox className="size-4.5" />
+          </span>
+          <CardTitle className="mt-3">Mailbag</CardTitle>
+          <CardDescription>
+            Enter your admin key to manage lists.
+            <span className="mt-1 block font-mono text-[11px]">{collectorUrl}</span>
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit} className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="admin-key">Admin key</Label>
+              <Input
+                id="admin-key"
+                type="password"
+                autoFocus
+                autoComplete="current-password"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="ADMIN_API_KEY"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "key-error" : undefined}
+              />
+              {error && (
+                <p id="key-error" role="alert" className="text-xs text-destructive">
+                  {error}
+                </p>
+              )}
+            </div>
+            <Button type="submit" className="w-full" disabled={!value.trim() || checking}>
+              {checking ? "Checking…" : "Unlock"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

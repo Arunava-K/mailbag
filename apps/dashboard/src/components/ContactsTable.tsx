@@ -1,20 +1,44 @@
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Btn, inputCls, statusTone, type Toast } from "../components/ui";
+import { Search } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { api, type Contact } from "../lib/api";
+import { fullTime, relTime } from "../lib/format";
+import type { ToastFn } from "../lib/toast";
+import { cn } from "@/lib/utils";
 
 const PAGE = 25;
-const statuses = ["", "confirmed", "pending", "unsubscribed"];
+const statuses = ["", "confirmed", "pending", "unsubscribed"] as const;
+
+function statusVariant(s: string): "default" | "secondary" | "outline" {
+  if (s === "confirmed") return "default";
+  if (s === "pending") return "secondary";
+  return "outline";
+}
 
 /** Shared paged contacts table used by list detail + global contacts screen. */
 export function ContactsTable({
-  listKey, adminKey, toast, initialQ = "",
+  listKey,
+  adminKey,
+  toast,
+  initialQ = "",
 }: {
   listKey: string;
   adminKey: string;
-  toast: (msg: string, kind?: Toast["kind"]) => void;
+  toast: ToastFn;
   initialQ?: string;
 }) {
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState<(typeof statuses)[number]>("");
   const [q, setQ] = useState(initialQ);
   const [debouncedQ, setDebouncedQ] = useState(initialQ);
   const [page, setPage] = useState(0);
@@ -62,46 +86,94 @@ export function ContactsTable({
           {statuses.map((s) => (
             <button
               key={s || "all"}
-              onClick={() => { setStatus(s); setPage(0); }}
-              className={`rounded-lg px-2.5 py-1 text-xs ${status === s ? "bg-zinc-900 font-medium text-white" : "text-zinc-500 hover:bg-zinc-100"}`}
+              type="button"
+              onClick={() => {
+                setStatus(s);
+                setPage(0);
+              }}
+              aria-pressed={status === s}
+              className={cn(
+                "rounded-lg px-2.5 py-1 text-xs font-medium transition-colors",
+                status === s
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
             >
               {s || "all"}
             </button>
           ))}
         </div>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search email…" className={`${inputCls} md:ml-auto md:w-56`} />
+        <InputGroup className="h-9 border-none bg-secondary px-3 md:ml-auto md:max-w-56">
+          <InputGroupAddon className="pl-0">
+            <Search className="size-4 text-muted-foreground" />
+          </InputGroupAddon>
+          <InputGroupInput
+            aria-label="Search contacts"
+            placeholder="Search email…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </InputGroup>
       </div>
-      <div className="overflow-hidden rounded-xl border border-zinc-200">
-        <table className="w-full text-left text-[13px]">
-          <thead>
-            <tr className="border-b border-zinc-200 bg-zinc-50 text-xs text-zinc-500">
-              <th className="px-3 py-2 font-medium">Email</th>
-              <th className="px-3 py-2 font-medium">Status</th>
-              <th className="hidden px-3 py-2 font-medium md:table-cell">Confirmed</th>
-              <th className="hidden px-3 py-2 font-medium lg:table-cell">Added</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100 bg-white">
-            {rows.map((c) => (
-              <tr key={c.email} className="hover:bg-zinc-50">
-                <td className="px-3 py-2 font-mono text-xs text-zinc-800">{c.email}</td>
-                <td className="px-3 py-2"><Badge tone={statusTone(c.status)}>{c.status}</Badge></td>
-                <td className="hidden px-3 py-2 text-xs text-zinc-500 md:table-cell">{c.confirmed_at ?? "—"}</td>
-                <td className="hidden px-3 py-2 text-xs text-zinc-500 lg:table-cell">{c.created_at}</td>
-              </tr>
-            ))}
-            {rows.length === 0 && !loading && (
-              <tr><td colSpan={4} className="px-3 py-8 text-center text-[13px] text-zinc-400">No contacts match.</td></tr>
+      <div className="overflow-hidden rounded-xl border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Email</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Confirmed</TableHead>
+              <TableHead className="hidden lg:table-cell">Added</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading && rows.length === 0 ? (
+              [0, 1, 2, 3, 4].map((i) => (
+                <TableRow key={i}>
+                  <TableCell colSpan={4}>
+                    <Skeleton className="h-6" />
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              rows.map((c) => (
+                <TableRow key={c.email}>
+                  <TableCell className="font-mono text-xs">{c.email}</TableCell>
+                  <TableCell>
+                    <Badge variant={statusVariant(c.status)}>{c.status}</Badge>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground" title={fullTime(c.confirmed_at)}>
+                    {relTime(c.confirmed_at)}
+                  </TableCell>
+                  <TableCell className="hidden text-xs text-muted-foreground lg:table-cell" title={fullTime(c.created_at)}>
+                    {relTime(c.created_at)}
+                  </TableCell>
+                </TableRow>
+              ))
             )}
-          </tbody>
-        </table>
+            {rows.length === 0 && !loading && (
+              <TableRow>
+                <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                  No contacts match.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </div>
-      <div className="flex items-center justify-between text-[13px] text-zinc-500">
-        <span>{loading ? "Loading…" : `${total} contact${total === 1 ? "" : "s"}`}</span>
+      <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <span>
+          {loading ? "Loading…" : `${total} contact${total === 1 ? "" : "s"}`}
+        </span>
         <div className="flex items-center gap-2">
-          <Btn disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Prev</Btn>
-          <span className="text-xs tabular-nums">{page + 1} / {pages}</span>
-          <Btn disabled={page + 1 >= pages} onClick={() => setPage((p) => p + 1)}>Next</Btn>
+          <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+            Prev
+          </Button>
+          <span className="text-xs tabular-nums">
+            {page + 1} / {pages}
+          </span>
+          <Button variant="outline" size="sm" disabled={page + 1 >= pages} onClick={() => setPage((p) => p + 1)}>
+            Next
+          </Button>
         </div>
       </div>
     </div>
