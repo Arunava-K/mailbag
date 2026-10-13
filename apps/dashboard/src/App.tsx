@@ -148,6 +148,7 @@ export default function App() {
             loading={loading}
             adminKey={adminKey}
             openList={openList}
+            goContacts={() => setView("contacts")}
             onNewList={() => {
               setView("lists");
               setCreateNonce((n) => n + 1);
