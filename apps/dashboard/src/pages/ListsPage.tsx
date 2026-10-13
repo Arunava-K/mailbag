@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListForm } from "../components/ListForm";
+import { PageHeader } from "../components/app-shell";
 import { api, type CreateListInput, type MailList } from "../lib/api";
 import { cn } from "@/lib/utils";
 import type { Toast } from "../lib/toast";
@@ -107,7 +108,9 @@ export function ListsPage({
   };
 
   return (
-    <div className="space-y-4">
+    <>
+      <PageHeader title="Lists" sub="Newsletters and waitlists — pick one to manage contacts, embeds, and settings." />
+      <div className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <InputGroup className="h-10 border-none bg-secondary px-3 lg:max-w-xs">
           <InputGroupAddon className="pl-0">
@@ -282,6 +285,7 @@ export function ListsPage({
           <ListForm saving={saving} submitLabel="Create" onSubmit={create} />
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </>
   );
 }

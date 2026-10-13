@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "../components/app-shell";
 import { useTheme } from "@/components/watermelon/astrix-dashboard/components/astrix/theme-provider";
 import type { ToastFn } from "../lib/toast";
 import { cn } from "@/lib/utils";
@@ -18,7 +19,9 @@ export function SettingsPage({
   const [reveal, setReveal] = useState(false);
   const { theme, setTheme } = useTheme();
   return (
-    <div className="max-w-2xl space-y-4">
+    <>
+      <PageHeader title="Settings" sub="Connection, appearance, and session." />
+      <div className="max-w-2xl space-y-4">
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">Connection</CardTitle>
@@ -95,6 +98,7 @@ export function SettingsPage({
           <Button variant="destructive" onClick={onLock}>Lock dashboard</Button>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </>
   );
 }

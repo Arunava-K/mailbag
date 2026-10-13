@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { CircleCheck, Hourglass, Mails, Users, type LucideIcon } from "lucide-react";
+import { CircleCheck, Hourglass, Mails, TrendingUp, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "../components/app-shell";
 import { useCountUp } from "../hooks/useCountUp";
 import { api, type MailList, type Stats } from "../lib/api";
 import { fullTime, relTime } from "../lib/format";
@@ -20,11 +21,13 @@ function MetricCard({
   label,
   value,
   footnote,
+  pill,
 }: {
   icon: LucideIcon;
   label: string;
   value: number;
   footnote?: string;
+  pill?: string;
 }) {
   const v = useCountUp(value);
   return (
@@ -38,8 +41,17 @@ function MetricCard({
         </div>
         <div>
           <p className="text-3xl leading-none font-semibold tabular-nums">{v}</p>
-          {footnote && (
-            <p className="mt-2 text-xs font-medium text-muted-foreground">{footnote}</p>
+          {pill ? (
+            <p className="mt-2 flex items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 rounded-xl bg-success/10 px-2 py-0.5 text-xs font-medium text-success">
+                <TrendingUp className="size-3" />
+                {pill}
+              </span>
+            </p>
+          ) : (
+            footnote && (
+              <p className="mt-2 text-xs font-medium text-muted-foreground">{footnote}</p>
+            )
           )}
         </div>
       </CardContent>
@@ -106,65 +118,78 @@ export function Overview({
 
   if (loading && !stats) {
     return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-32" />
-          ))}
+      <>
+        <PageHeader title="Overview" sub="Signup activity across all lists." />
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-32" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <Skeleton className="h-64" />
+            <Skeleton className="h-64" />
+          </div>
         </div>
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <Skeleton className="h-64" />
-          <Skeleton className="h-64" />
-        </div>
-      </div>
+      </>
     );
   }
 
   if (!stats) {
     return (
-      <Card>
-        <CardContent className="flex flex-col items-center gap-3 p-10 text-center">
-          <p className="text-sm font-medium">Couldn't reach the API.</p>
-          <p className="max-w-sm text-sm text-muted-foreground">
-            Check the connection in Settings — the API URL or key may be wrong.
-          </p>
-        </CardContent>
-      </Card>
+      <>
+        <PageHeader title="Overview" sub="Signup activity across all lists." />
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 p-10 text-center">
+            <p className="text-sm font-medium">Couldn't reach the API.</p>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              Check the connection in Settings — the API URL or key may be wrong.
+            </p>
+          </CardContent>
+        </Card>
+      </>
     );
   }
 
   if (lists.length === 0) {
     return (
-      <Card>
-        <CardContent className="flex flex-col items-center gap-3 p-10 text-center">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10">
-            <Mails className="size-5 text-primary" />
-          </span>
-          <p className="text-sm font-medium">No lists yet</p>
-          <p className="max-w-sm text-sm text-muted-foreground">
-            Create your first list to get an embed key, then paste the form snippet
-            into any static site.
-          </p>
-          <Button onClick={onNewList} className="mt-1">Create your first list</Button>
-        </CardContent>
-      </Card>
+      <>
+        <PageHeader title="Overview" sub="Signup activity across all lists." />
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 p-10 text-center">
+            <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10">
+              <Mails className="size-5 text-primary" />
+            </span>
+            <p className="text-sm font-medium">No lists yet</p>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              Create your first list to get an embed key, then paste the form snippet
+              into any static site.
+            </p>
+            <Button onClick={onNewList} className="mt-1">Create your first list</Button>
+          </CardContent>
+        </Card>
+      </>
     );
   }
 
   const total = stats.confirmed + stats.pending;
+  const fortnight = stats.by_day.reduce((n, d) => n + d.count, 0);
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <MetricCard icon={Mails} label="Lists" value={stats.lists} />
-        <MetricCard
-          icon={CircleCheck}
-          label="Confirmed"
-          value={stats.confirmed}
-          footnote={total > 0 ? `${Math.round((stats.confirmed / total) * 100)}% of all contacts` : undefined}
-        />
-        <MetricCard icon={Hourglass} label="Awaiting confirmation" value={stats.pending} />
-        <MetricCard icon={Users} label="Total contacts" value={total} />
-      </div>
+    <>
+      <PageHeader title="Overview" sub="Signup activity across all lists." />
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <MetricCard icon={Mails} label="Lists" value={stats.lists} />
+          <MetricCard
+            icon={CircleCheck}
+            label="Confirmed"
+            value={stats.confirmed}
+            pill={fortnight > 0 ? `+${fortnight} in 14 days` : undefined}
+            footnote={fortnight === 0 && total > 0 ? `${Math.round((stats.confirmed / total) * 100)}% of all contacts` : undefined}
+          />
+          <MetricCard icon={Hourglass} label="Awaiting confirmation" value={stats.pending} />
+          <MetricCard icon={Users} label="Total contacts" value={total} />
+        </div>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -217,6 +242,7 @@ export function Overview({
           </CardContent>
         </Card>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

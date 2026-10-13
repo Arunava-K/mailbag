@@ -77,7 +77,7 @@ function MailbagSidebar({
           <Mailbox className="size-4.5" />
         </span>
         <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-          <div className="truncate text-sm font-semibold">Mailbag</div>
+          <div className="truncate text-lg leading-tight font-medium">Mailbag</div>
           <div className="text-xs text-muted-foreground">
             {lists.length} list{lists.length === 1 ? "" : "s"}
           </div>
@@ -85,8 +85,8 @@ function MailbagSidebar({
         <SidebarTrigger className="ml-auto hidden md:flex" />
       </SidebarHeader>
 
-      <SidebarContent className="gap-4 overflow-x-hidden px-2 py-2">
-        <SidebarMenu>
+      <SidebarContent className="gap-3 overflow-x-hidden px-3 py-4">
+        <SidebarMenu className="gap-2">
           {mainItems.map((it) => {
             const Icon = it.icon;
             const active = screen === it.id;
@@ -96,11 +96,12 @@ function MailbagSidebar({
                   isActive={active}
                   tooltip={it.label}
                   onClick={() => go(it.id)}
+                  className="h-12 px-3 text-base group-data-[collapsible=icon]:size-12! group-data-[collapsible=icon]:px-3.5! data-[active=true]:text-primary data-[active=true]:[filter:var(--shadow-sidebar-item)] [&_svg]:size-5"
                 >
                   <Icon />
-                  <span>{it.label}</span>
+                  <span className="truncate group-data-[collapsible=icon]:hidden">{it.label}</span>
                   {it.id === "contacts" && pendingBadge > 0 && (
-                    <span className="ml-auto rounded-md bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-600 group-data-[collapsible=icon]:hidden dark:text-amber-400">
+                    <span className="ml-auto rounded-md bg-foreground/10 px-1.5 py-0.5 text-xs font-medium text-foreground group-data-[collapsible=icon]:hidden">
                       {pendingBadge}
                     </span>
                   )}
@@ -112,8 +113,8 @@ function MailbagSidebar({
 
         <div className="group-data-[collapsible=icon]:hidden">
           {starredLists.length > 0 && (
-            <SidebarMenu>
-              <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+            <SidebarMenu className="gap-1">
+              <div className="px-3 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
                 Starred
               </div>
               {starredLists.map((l) => (
@@ -121,6 +122,7 @@ function MailbagSidebar({
                   <SidebarMenuButton
                     isActive={activeKey === l.list_key}
                     onClick={() => openList(l.list_key)}
+                    className="h-10 px-3 text-sm data-[active=true]:text-primary data-[active=true]:[filter:var(--shadow-sidebar-item)]"
                   >
                     <ListDot type={l.type} />
                     <span className="truncate">{l.name}</span>
@@ -129,8 +131,8 @@ function MailbagSidebar({
               ))}
             </SidebarMenu>
           )}
-          <SidebarMenu>
-            <div className="px-2 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+          <SidebarMenu className="gap-1">
+            <div className="px-3 pt-2 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
               Lists
             </div>
             {lists.map((l) => (
@@ -138,34 +140,45 @@ function MailbagSidebar({
                 <SidebarMenuButton
                   isActive={activeKey === l.list_key}
                   onClick={() => openList(l.list_key)}
+                  className="h-10 px-3 text-sm data-[active=true]:text-primary data-[active=true]:[filter:var(--shadow-sidebar-item)]"
                 >
                   <ListDot type={l.type} />
                   <span className="truncate">{l.name}</span>
-                  <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">
+                  <span className="ml-auto text-xs text-muted-foreground tabular-nums">
                     {l.confirmed}
                   </span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
             {lists.length === 0 && (
-              <p className="px-2 py-1 text-xs text-muted-foreground">No lists yet.</p>
+              <p className="px-3 py-1 text-xs text-muted-foreground">No lists yet.</p>
             )}
           </SidebarMenu>
         </div>
       </SidebarContent>
 
-      <SidebarFooter className="px-2 py-2">
-        <SidebarMenu>
+      <SidebarFooter className="px-3 py-2">
+        <SidebarMenu className="gap-2">
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Toggle theme" onClick={toggleTheme}>
+            <SidebarMenuButton
+              tooltip="Toggle theme"
+              onClick={toggleTheme}
+              className="h-12 px-3 text-base group-data-[collapsible=icon]:size-12! group-data-[collapsible=icon]:px-3.5! [&_svg]:size-5"
+            >
               {theme === "dark" ? <Sun /> : <Moon />}
-              <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+              <span className="group-data-[collapsible=icon]:hidden">
+                {theme === "dark" ? "Light mode" : "Dark mode"}
+              </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Lock dashboard" onClick={onLock}>
+            <SidebarMenuButton
+              tooltip="Lock dashboard"
+              onClick={onLock}
+              className="h-12 px-3 text-base group-data-[collapsible=icon]:size-12! group-data-[collapsible=icon]:px-3.5! [&_svg]:size-5"
+            >
               <Lock />
-              <span>Lock</span>
+              <span className="group-data-[collapsible=icon]:hidden">Lock</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -184,17 +197,18 @@ function Topbar({
   apiOk: boolean;
 }) {
   return (
-    <header className="flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4">
-      <SidebarTrigger className="md:hidden" />
+    <header className="flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4 md:px-6">
+      <SidebarTrigger className="size-10 md:hidden [&_svg]:size-5!" />
       <button
         onClick={onSearch}
-        className="hidden h-10 flex-1 items-center gap-2 rounded-lg border-none bg-secondary px-3 text-sm text-muted-foreground hover:text-foreground sm:flex md:max-w-sm"
+        className="hidden h-10 max-w-md flex-1 items-center gap-2 rounded-lg bg-secondary px-3 text-sm text-muted-foreground hover:text-foreground sm:flex"
       >
         <Search className="size-4" />
-        <span className="flex-1 text-left">Search or jump…</span>
-        <kbd className="rounded-md bg-background px-1.5 py-1 text-[11px] font-medium">
-          ⌘K
-        </kbd>
+        <span className="flex-1 text-left">Search lists, contacts…</span>
+        <span className="flex items-center gap-1 rounded-md bg-background px-2 py-1.5 text-muted-foreground">
+          <span className="text-xs leading-none font-medium">⌘</span>
+          <span className="text-sm leading-none font-medium">K</span>
+        </span>
       </button>
       <Button
         variant="secondary"
@@ -212,15 +226,29 @@ function Topbar({
             apiOk ? "bg-emerald-500" : "bg-destructive",
           )}
         />
-        {apiOk ? "API online" : "API offline"}
+        <span className="hidden md:inline">{apiOk ? "API online" : "API offline"}</span>
       </span>
-      <Button onClick={onNewList} className="h-10">
-        <Plus className="size-4" />
+      <Button onClick={onNewList} className="h-10 gap-1 px-3.5">
+        <Plus className="size-5" />
         <span className="hidden sm:inline">New list</span>
       </Button>
     </header>
   );
 }
+
+function PageHeader({ title, sub, action }: { title: string; sub: string; action?: React.ReactNode }) {
+  return (
+    <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <div className="space-y-2">
+        <h1 className="text-2xl font-semibold">{title}</h1>
+        <p className="text-sm text-muted-foreground">{sub}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+export { PageHeader };
 
 export function AppShell({
   screen,
@@ -252,7 +280,7 @@ export function AppShell({
   return (
     <SidebarProvider
       className="astrix-dashboard h-svh overflow-hidden"
-      style={{ "--sidebar-width": "16.5rem", "--sidebar-width-icon": "3.75rem" } as React.CSSProperties}
+      style={{ "--sidebar-width": "18rem", "--sidebar-width-icon": "5.125rem" } as React.CSSProperties}
     >
       <MailbagSidebar
         screen={screen}
@@ -269,7 +297,7 @@ export function AppShell({
           <Topbar onSearch={onSearch} onNewList={onNewList} apiOk={apiOk} />
         </div>
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6">
+          <div className="mx-auto w-full max-w-7xl px-4 pt-8 pb-10 md:px-6">
             {children}
           </div>
         </main>

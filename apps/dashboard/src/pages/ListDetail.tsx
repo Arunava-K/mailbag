@@ -219,7 +219,7 @@ export function ListDetail({
         )}>
           {list.name.slice(0, 1).toUpperCase()}
         </span>
-        <h1 className="text-lg font-semibold">{list.name}</h1>
+        <h1 className="text-xl font-semibold">{list.name}</h1>
         <button
           type="button"
           onClick={onToggleStar}
