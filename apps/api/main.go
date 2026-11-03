@@ -19,7 +19,7 @@ func main() {
 	m := mailer.New(cfg)
 	mux := http.NewServeMux()
 	handlers.NewPublic(database, m, cfg).Routes(mux)
-	handlers.NewAdmin(database, cfg.AdminAPIKey, cfg.AdminOrigins).Routes(mux)
+	handlers.NewAdmin(database, m, cfg.BaseURL, cfg.AdminAPIKey, cfg.AdminOrigins).Routes(mux)
 
 	log.Printf("mailbag on :%s base=%s db=%s", cfg.Port, cfg.BaseURL, dbMode(cfg))
 	log.Fatal(http.ListenAndServe(":"+cfg.Port, mux))

@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { Search } from "lucide-react";
+import { Check, MoreHorizontal, Search, Send, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -32,11 +39,14 @@ export function ContactsTable({
   adminKey,
   toast,
   initialQ = "",
+  refresh,
 }: {
   listKey: string;
   adminKey: string;
   toast: ToastFn;
   initialQ?: string;
+  /** Called after a mutation so parent counts stay in sync. */
+  refresh?: () => void;
 }) {
   const [status, setStatus] = useState<(typeof statuses)[number]>("");
   const [q, setQ] = useState(initialQ);
@@ -78,6 +88,17 @@ export function ContactsTable({
   }, [load]);
 
   const pages = Math.max(1, Math.ceil(total / PAGE));
+
+  const act = async (label: string, fn: () => Promise<unknown>) => {
+    try {
+      await fn();
+      toast(label);
+      await load();
+      refresh?.();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "action failed", "err");
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -123,13 +144,14 @@ export function ContactsTable({
               <TableHead>Status</TableHead>
               <TableHead>Confirmed</TableHead>
               <TableHead className="hidden lg:table-cell">Added</TableHead>
+              <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && rows.length === 0 ? (
               [0, 1, 2, 3, 4].map((i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={4}>
+                  <TableCell colSpan={5}>
                     <Skeleton className="h-6" />
                   </TableCell>
                 </TableRow>
@@ -147,12 +169,46 @@ export function ContactsTable({
                   <TableCell className="hidden text-xs text-muted-foreground lg:table-cell" title={fullTime(c.created_at)}>
                     {relTime(c.created_at)}
                   </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7"
+                          aria-label={`Actions for ${c.email}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {c.status !== "confirmed" && (
+                          <DropdownMenuItem onClick={() => act("Contact confirmed", () => api.confirmContact(adminKey, listKey, c.email))}>
+                            <Check className="size-3.5" /> Confirm now
+                          </DropdownMenuItem>
+                        )}
+                        {c.status !== "confirmed" && (
+                          <DropdownMenuItem onClick={() => act("Confirmation email sent", () => api.resendContact(adminKey, listKey, c.email))}>
+                            <Send className="size-3.5" /> Resend confirmation
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => act("Contact deleted", () => api.deleteContact(adminKey, listKey, c.email))}
+                        >
+                          <Trash2 className="size-3.5" /> Delete contact
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
                 </TableRow>
               ))
             )}
             {rows.length === 0 && !loading && (
               <TableRow>
-                <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
                   No contacts match.
                 </TableCell>
               </TableRow>

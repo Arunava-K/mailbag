@@ -30,7 +30,7 @@ func testServer(t *testing.T) (*httptest.Server, *sql.DB) {
 	cfg := config.Config{BaseURL: "http://api.test"}
 	m := mailer.New(cfg)
 	p := NewPublic(d, m, cfg)
-	a := NewAdmin(d, "sekrit", "")
+	a := NewAdmin(d, m, cfg.BaseURL, "sekrit", "")
 	mux := http.NewServeMux()
 	p.Routes(mux)
 	a.Routes(mux)
@@ -292,5 +292,89 @@ func TestAdminAuthRequired(t *testing.T) {
 	resp2.Body.Close()
 	if resp2.StatusCode != 401 {
 		t.Fatalf("bad key = %d, want 401", resp2.StatusCode)
+	}
+}
+
+func adminReq(t *testing.T, s *httptest.Server, method, path, body string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(method, s.URL+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer sekrit")
+	resp, err := s.Client().Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b)
+}
+
+func TestContactMutations(t *testing.T) {
+	s, d := testServer(t)
+	createList(t, d, "pk_nl", "newsletter")
+	postJSON(t, s, "/v1/subscribe", `{"list_key":"pk_nl","email":"stuck@example.com"}`)
+
+	// Manual confirm: pending → confirmed, pending tokens cleaned up.
+	code, body := adminReq(t, s, "POST", "/admin/contacts/confirm", `{"list_key":"pk_nl","email":"stuck@example.com"}`)
+	if code != 200 || !strings.Contains(body, `"confirmed"`) {
+		t.Fatalf("confirm = %d %s", code, body)
+	}
+	if got := contactStatus(t, d, "pk_nl", "stuck@example.com"); got != "confirmed" {
+		t.Fatalf("status after manual confirm = %q", got)
+	}
+	var tokens int
+	_ = d.QueryRow(`SELECT COUNT(*) FROM tokens WHERE email='stuck@example.com'`).Scan(&tokens)
+	if tokens != 0 {
+		t.Fatalf("manual confirm left %d tokens", tokens)
+	}
+
+	// Confirm is 404 for a contact that does not exist.
+	code, _ = adminReq(t, s, "POST", "/admin/contacts/confirm", `{"list_key":"pk_nl","email":"ghost@example.com"}`)
+	if code != 404 {
+		t.Fatalf("confirm unknown = %d, want 404", code)
+	}
+
+	// Resend: pending contact gets a fresh token; confirmed contact is rejected.
+	postJSON(t, s, "/v1/subscribe", `{"list_key":"pk_nl","email":"waiting@example.com"}`)
+	code, body = adminReq(t, s, "POST", "/admin/contacts/resend", `{"list_key":"pk_nl","email":"waiting@example.com"}`)
+	if code != 200 || !strings.Contains(body, `"sent"`) {
+		t.Fatalf("resend = %d %s", code, body)
+	}
+	_ = d.QueryRow(`SELECT COUNT(*) FROM tokens WHERE email='waiting@example.com'`).Scan(&tokens)
+	if tokens != 2 { // original subscribe + resend
+		t.Fatalf("resend tokens = %d, want 2", tokens)
+	}
+	code, _ = adminReq(t, s, "POST", "/admin/contacts/resend", `{"list_key":"pk_nl","email":"stuck@example.com"}`)
+	if code != 400 {
+		t.Fatalf("resend confirmed = %d, want 400", code)
+	}
+
+	// Delete: contact and tokens gone.
+	code, body = adminReq(t, s, "DELETE", "/admin/contacts?list_key=pk_nl&email=waiting@example.com", "")
+	if code != 200 || !strings.Contains(body, `"deleted"`) {
+		t.Fatalf("delete = %d %s", code, body)
+	}
+	var n int
+	_ = d.QueryRow(`SELECT COUNT(*) FROM contacts WHERE email='waiting@example.com'`).Scan(&n)
+	if n != 0 {
+		t.Fatal("delete left the contact behind")
+	}
+	_ = d.QueryRow(`SELECT COUNT(*) FROM tokens WHERE email='waiting@example.com'`).Scan(&tokens)
+	if tokens != 0 {
+		t.Fatal("delete left tokens behind")
+	}
+
+	// Mutations require the key.
+	req, _ := http.NewRequest("DELETE", s.URL+"/admin/contacts?list_key=pk_nl&email=x@y.co", nil)
+	resp, err := s.Client().Do(req)
+	if err != nil {
+		t.Fatalf("unauth delete: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 401 {
+		t.Fatalf("unauth delete = %d, want 401", resp.StatusCode)
 	}
 }

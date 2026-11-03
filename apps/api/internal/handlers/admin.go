@@ -8,23 +8,29 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
+
+	"mailbag/internal/mailer"
 )
 
 // Admin handles /admin/* (Bearer ADMIN_API_KEY).
 type Admin struct {
-	DB      *sql.DB
-	Key     string
+	DB     *sql.DB
+	Key    string
+	Mailer *mailer.Mailer
+	BaseURL string
+
 	origins []string
 }
 
-func NewAdmin(db *sql.DB, key, originsCSV string) *Admin {
+func NewAdmin(db *sql.DB, m *mailer.Mailer, baseURL, key, originsCSV string) *Admin {
 	var origins []string
 	for _, o := range strings.Split(originsCSV, ",") {
 		if o = strings.TrimSpace(o); o != "" {
 			origins = append(origins, o)
 		}
 	}
-	return &Admin{DB: db, Key: key, origins: origins}
+	return &Admin{DB: db, Key: key, Mailer: m, BaseURL: baseURL, origins: origins}
 }
 
 func (a *Admin) auth(next http.HandlerFunc) http.HandlerFunc {
@@ -80,7 +86,18 @@ func (a *Admin) Routes(mux *http.ServeMux) {
 			writeJSON(w, 405, map[string]string{"error": "method not allowed"})
 		}
 	})))
-	mux.HandleFunc("/admin/contacts", a.cors(a.auth(a.listContacts)))
+	mux.HandleFunc("/admin/contacts", a.cors(a.auth(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			a.listContacts(w, r)
+		case "DELETE":
+			a.deleteContact(w, r)
+		default:
+			writeJSON(w, 405, map[string]string{"error": "method not allowed"})
+		}
+	})))
+	mux.HandleFunc("/admin/contacts/confirm", a.cors(a.auth(a.confirmContact)))
+	mux.HandleFunc("/admin/contacts/resend", a.cors(a.auth(a.resendContact)))
 	mux.HandleFunc("/admin/stats", a.cors(a.auth(a.stats)))
 	mux.HandleFunc("/admin/export", a.cors(a.auth(a.exportCSV)))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -286,6 +303,113 @@ func (a *Admin) listContacts(w http.ResponseWriter, r *http.Request) {
 		out = []contactRow{}
 	}
 	writeJSON(w, 200, map[string]any{"total": total, "contacts": out})
+}
+
+type contactReq struct {
+	ListKey string `json:"list_key"`
+	Email   string `json:"email"`
+}
+
+// deleteContact removes a contact (and any of its pending tokens).
+func (a *Admin) deleteContact(w http.ResponseWriter, r *http.Request) {
+	listKey := r.URL.Query().Get("list_key")
+	email := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("email")))
+	if listKey == "" || email == "" {
+		writeJSON(w, 400, map[string]string{"error": "list_key and email required"})
+		return
+	}
+	tx, err := a.DB.Begin()
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "db error"})
+		return
+	}
+	defer tx.Rollback()
+	_, _ = tx.Exec(`DELETE FROM tokens WHERE list_id=? AND email=?`, listKey, email)
+	res, err := tx.Exec(`DELETE FROM contacts WHERE list_id=? AND email=?`, listKey, email)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "db error"})
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		writeJSON(w, 404, map[string]string{"error": "unknown contact"})
+		return
+	}
+	_ = tx.Commit()
+	writeJSON(w, 200, map[string]string{"status": "deleted"})
+}
+
+// confirmContact marks a contact confirmed without sending mail — for
+// pending signups whose confirm email was lost (e.g. SMTP outage).
+func (a *Admin) confirmContact(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeJSON(w, 405, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var req contactReq
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid json"})
+		return
+	}
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	if req.ListKey == "" || req.Email == "" {
+		writeJSON(w, 400, map[string]string{"error": "list_key and email required"})
+		return
+	}
+	res, err := a.DB.Exec(`UPDATE contacts SET status='confirmed', confirmed_at=CURRENT_TIMESTAMP
+		WHERE list_id=? AND email=?`, req.ListKey, req.Email)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "db error"})
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		writeJSON(w, 404, map[string]string{"error": "unknown contact"})
+		return
+	}
+	_, _ = a.DB.Exec(`DELETE FROM tokens WHERE list_id=? AND email=?`, req.ListKey, req.Email)
+	writeJSON(w, 200, map[string]string{"status": "confirmed"})
+}
+
+// resendContact issues a fresh confirm token and re-sends the email.
+func (a *Admin) resendContact(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeJSON(w, 405, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var req contactReq
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid json"})
+		return
+	}
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	if req.ListKey == "" || req.Email == "" {
+		writeJSON(w, 400, map[string]string{"error": "list_key and email required"})
+		return
+	}
+	var status string
+	if err := a.DB.QueryRow(`SELECT status FROM contacts WHERE list_id=? AND email=?`, req.ListKey, req.Email).Scan(&status); err != nil {
+		writeJSON(w, 404, map[string]string{"error": "unknown contact"})
+		return
+	}
+	if status == "confirmed" {
+		writeJSON(w, 400, map[string]string{"error": "already confirmed"})
+		return
+	}
+	var listName, provider, senderName, senderEmail string
+	if err := a.DB.QueryRow(`SELECT name, provider, sender_name, sender_email FROM lists WHERE id=?`, req.ListKey).
+		Scan(&listName, &provider, &senderName, &senderEmail); err != nil {
+		writeJSON(w, 404, map[string]string{"error": "unknown list"})
+		return
+	}
+	tok := make([]byte, 24)
+	_, _ = rand.Read(tok)
+	token := hex.EncodeToString(tok)
+	_, _ = a.DB.Exec(`INSERT INTO tokens(token, list_id, email, expires_at) VALUES(?, ?, ?, ?)`,
+		token, req.ListKey, req.Email, time.Now().Add(48*time.Hour))
+	confirmURL := strings.TrimRight(a.BaseURL, "/") + "/v1/confirm?token=" + token
+	go func() { _ = a.Mailer.SendConfirm(provider, req.Email, senderName, senderEmail, confirmURL, listName) }()
+	writeJSON(w, 200, map[string]string{"status": "sent"})
 }
 
 func (a *Admin) stats(w http.ResponseWriter, r *http.Request) {

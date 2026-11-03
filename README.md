@@ -18,6 +18,10 @@ Single Go binary. Native forms on your sites POST to it. DB: Turso (set `TURSO_*
   - `POST /admin/lists` `{name, type: newsletter|waitlist, sender_name, sender_email, provider: smtp|plunk, welcome_subject, welcome_body, confirm_redirect}` → `{list_key}`
   - `GET /admin/lists` → counts per list
   - `GET /admin/export?list_key=` → CSV
+  - `GET /admin/contacts?list_key=&status=&q=&limit=&offset=` → paged contacts
+  - `POST /admin/contacts/confirm` `{list_key, email}` — mark confirmed without sending mail (stuck pending)
+  - `POST /admin/contacts/resend` `{list_key, email}` — fresh token + re-send confirm email
+  - `DELETE /admin/contacts?list_key=&email=` — remove a contact and its tokens
 
 CORS is open (`*`) on `/v1/*` so any static site can `fetch()` it directly. Spam defense: IP rate limit (20/min, `X-Forwarded-For` aware behind Traefik), honeypot `website` field, email validation.
 

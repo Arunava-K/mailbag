@@ -103,6 +103,20 @@ export const api = {
     if (q.q) p.set("q", q.q);
     return req<{ total: number; contacts: Contact[] }>(`/admin/contacts?${p}`, key);
   },
+  confirmContact: (key: string, listKey: string, email: string) =>
+    req<{ status: string }>("/admin/contacts/confirm", key, {
+      method: "POST",
+      body: JSON.stringify({ list_key: listKey, email }),
+    }),
+  resendContact: (key: string, listKey: string, email: string) =>
+    req<{ status: string }>("/admin/contacts/resend", key, {
+      method: "POST",
+      body: JSON.stringify({ list_key: listKey, email }),
+    }),
+  deleteContact: (key: string, listKey: string, email: string) =>
+    req<{ status: string }>(`/admin/contacts?list_key=${encodeURIComponent(listKey)}&email=${encodeURIComponent(email)}`, key, {
+      method: "DELETE",
+    }),
   exportCsv: async (key: string, listKey: string): Promise<Blob> => {
     const res = await fetch(`${base()}/admin/export?list_key=${encodeURIComponent(listKey)}`, {
       headers: { Authorization: `Bearer ${key}` },
