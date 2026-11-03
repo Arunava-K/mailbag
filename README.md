@@ -72,6 +72,8 @@ cd apps/dashboard && npm install && npm run dev  # -> :5173, /api proxied
 ## Notes
 
 - Dev mode: if `SMTP_HOST` is empty, sends are logged + skipped (full flow still testable via token in DB).
+- `SMTP_PORT=465` uses implicit TLS (port 465 doesn't speak STARTTLS); 587 and others use `net/smtp` STARTTLS as before.
+- Admin auth: constant-time key compare; an IP with 10 failed keys in 15 minutes is locked out of `/admin/*` (correct key included) until the window slides past.
 - Rate limiting derives the client IP as: `CF-Connecting-IP` (Cloudflare overwrites it) → rightmost `X-Forwarded-For` entry (Traefik appends the real peer) → socket address. A client that bypasses Cloudflare straight to Traefik can still forge `CF-Connecting-IP`; setting Traefik's `forwardedHeaders.trustedIPs` to Cloudflare's ranges closes that.
 - Per-list `provider: smtp|plunk` lets newsletters use SMTP and SaaS lists use Plunk.
 - Broadcasts intentionally out of scope for V1 — collection + double opt-in + welcome only.

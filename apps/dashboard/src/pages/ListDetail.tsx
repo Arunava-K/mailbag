@@ -304,6 +304,7 @@ export function ListDetail({
                 } />
                 <DetailRow k="Confirmed" v={<span className="tabular-nums">{list.confirmed}</span>} />
                 <DetailRow k="Pending" v={<span className="tabular-nums">{list.pending}</span>} />
+                {list.unsubscribed > 0 && <DetailRow k="Unsubscribed" v={<span className="tabular-nums">{list.unsubscribed}</span>} />}
                 {list.confirm_redirect && <DetailRow k="Redirect" v={<span className="truncate text-muted-foreground">{list.confirm_redirect}</span>} />}
               </dl>
             </CardContent>

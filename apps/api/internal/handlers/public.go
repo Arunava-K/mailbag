@@ -166,18 +166,19 @@ func (p *Public) subscribe(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"status": "confirmed", "message": "already subscribed"})
 		return
 	}
-	var position int
-	if listType == "waitlist" {
-		_ = p.DB.QueryRow(`SELECT COUNT(*) FROM contacts WHERE list_id = ?`, listID).Scan(&position)
-		position++
-	}
+	// Position is computed in the INSERT itself: a separate COUNT+INSERT pair
+	// raced under concurrent signups (both would claim the same spot).
 	_, err = p.DB.Exec(`INSERT INTO contacts(list_id, email, status, position, metadata)
-		VALUES(?, ?, 'pending', ?, ?)
+		VALUES(?, ?, 'pending', (SELECT COUNT(*) FROM contacts WHERE list_id = ?) + 1, ?)
 		ON CONFLICT(list_id, email) DO UPDATE SET status='pending', metadata=excluded.metadata`,
-		listID, req.Email, position, req.Metadata)
+		listID, req.Email, listID, req.Metadata)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "db error"})
 		return
+	}
+	var position int
+	if listType == "waitlist" {
+		_ = p.DB.QueryRow(`SELECT position FROM contacts WHERE list_id = ? AND email = ?`, listID, req.Email).Scan(&position)
 	}
 
 	tok := make([]byte, 24)

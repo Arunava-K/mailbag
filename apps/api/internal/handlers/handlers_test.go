@@ -466,3 +466,65 @@ func TestPurgeExpiredTokens(t *testing.T) {
 		t.Fatalf("purge kept the wrong token: %q", token)
 	}
 }
+
+// Ten bad keys from one IP lock out /admin/* for the window — even the
+// correct key is refused, so an attacker can't keep guessing.
+func TestAdminBruteForceLockout(t *testing.T) {
+	s, _ := testServer(t)
+
+	for i := 0; i < adminFailLimit; i++ {
+		req, _ := http.NewRequest("GET", s.URL+"/admin/lists", nil)
+		req.Header.Set("Authorization", "Bearer wrong-key-"+string(rune('a'+i)))
+		resp, err := s.Client().Do(req)
+		if err != nil {
+			t.Fatalf("attempt %d: %v", i, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 401 {
+			t.Fatalf("attempt %d = %d, want 401", i, resp.StatusCode)
+		}
+	}
+	code, _ := adminReq(t, s, "GET", "/admin/lists", "")
+	if code != 429 {
+		t.Fatalf("correct key after lockout = %d, want 429", code)
+	}
+}
+
+func TestListCountsIncludeUnsubscribed(t *testing.T) {
+	s, d := testServer(t)
+	createList(t, d, "pk_nl", "newsletter")
+
+	// two signups; confirm one, unsubscribe the other
+	postJSON(t, s, "/v1/subscribe", `{"list_key":"pk_nl","email":"keep@x.co"}`)
+	postJSON(t, s, "/v1/subscribe", `{"list_key":"pk_nl","email":"gone@x.co"}`)
+	var token string
+	if err := d.QueryRow(`SELECT token FROM tokens WHERE email='keep@x.co'`).Scan(&token); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := s.Client().Get(s.URL + "/v1/confirm?token=" + token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	code, _ := postJSON(t, s, "/v1/unsubscribe", `{"list_key":"pk_nl","email":"gone@x.co"}`)
+	if code != 200 {
+		t.Fatalf("unsubscribe = %d", code)
+	}
+
+	code, body := adminReq(t, s, "GET", "/admin/lists", "")
+	if code != 200 {
+		t.Fatalf("lists = %d", code)
+	}
+	var lists []struct {
+		Confirmed    int `json:"confirmed"`
+		Pending      int `json:"pending"`
+		Unsubscribed int `json:"unsubscribed"`
+	}
+	if err := json.Unmarshal([]byte(body), &lists); err != nil || len(lists) != 1 {
+		t.Fatalf("lists decode: %v %s", err, body)
+	}
+	got := lists[0]
+	if got.Confirmed != 1 || got.Pending != 0 || got.Unsubscribed != 1 {
+		t.Fatalf("counts = confirmed:%d pending:%d unsubscribed:%d, want 1/0/1", got.Confirmed, got.Pending, got.Unsubscribed)
+	}
+}

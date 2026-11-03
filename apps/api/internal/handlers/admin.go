@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"mailbag/internal/mailer"
@@ -15,13 +17,23 @@ import (
 
 // Admin handles /admin/* (Bearer ADMIN_API_KEY).
 type Admin struct {
-	DB     *sql.DB
-	Key    string
-	Mailer *mailer.Mailer
+	DB      *sql.DB
+	Key     string
+	Mailer  *mailer.Mailer
 	BaseURL string
 
 	origins []string
+
+	// Failed-auth throttling: per-IP counters, lockout after too many bad
+	// keys so ADMIN_API_KEY can't be brute-forced.
+	mu    sync.Mutex
+	fails map[string][]time.Time
 }
+
+const (
+	adminFailLimit  = 10
+	adminFailWindow = 15 * time.Minute
+)
 
 func NewAdmin(db *sql.DB, m *mailer.Mailer, baseURL, key, originsCSV string) *Admin {
 	var origins []string
@@ -30,15 +42,47 @@ func NewAdmin(db *sql.DB, m *mailer.Mailer, baseURL, key, originsCSV string) *Ad
 			origins = append(origins, o)
 		}
 	}
-	return &Admin{DB: db, Key: key, Mailer: m, BaseURL: baseURL, origins: origins}
+	return &Admin{DB: db, Key: key, Mailer: m, BaseURL: baseURL, origins: origins, fails: map[string][]time.Time{}}
+}
+
+func (a *Admin) pruneFails(ip string, now time.Time) []time.Time {
+	cut := now.Add(-adminFailWindow)
+	keep := a.fails[ip][:0]
+	for _, t := range a.fails[ip] {
+		if t.After(cut) {
+			keep = append(keep, t)
+		}
+	}
+	if len(keep) == 0 {
+		delete(a.fails, ip)
+		return nil
+	}
+	a.fails[ip] = keep
+	return keep
 }
 
 func (a *Admin) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if "Bearer "+a.Key != r.Header.Get("Authorization") {
+		ip := clientIP(r)
+		a.mu.Lock()
+		fails := a.pruneFails(ip, time.Now())
+		a.mu.Unlock()
+		if len(fails) >= adminFailLimit {
+			writeJSON(w, 429, map[string]string{"error": "too many failed attempts, retry later"})
+			return
+		}
+		// Constant-time: key length is public anyway (config), the
+		// comparison itself must not leak how many bytes matched.
+		if subtle.ConstantTimeCompare([]byte("Bearer "+a.Key), []byte(r.Header.Get("Authorization"))) != 1 {
+			a.mu.Lock()
+			a.fails[ip] = append(a.pruneFails(ip, time.Now()), time.Now())
+			a.mu.Unlock()
 			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
 			return
 		}
+		a.mu.Lock()
+		delete(a.fails, ip)
+		a.mu.Unlock()
 		next(w, r)
 	}
 }
@@ -163,15 +207,17 @@ type listRow struct {
 	WelcomeSubject  string `json:"welcome_subject"`
 	WelcomeBody     string `json:"welcome_body"`
 	ConfirmRedirect string `json:"confirm_redirect"`
-	Confirmed       int    `json:"confirmed"`
-	Pending         int    `json:"pending"`
+	Confirmed    int    `json:"confirmed"`
+	Pending      int    `json:"pending"`
+	Unsubscribed int    `json:"unsubscribed"`
 }
 
 func (a *Admin) listLists(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.DB.Query(`SELECT l.id, l.name, l.type, l.sender_name, l.sender_email, l.provider,
 		l.welcome_subject, l.welcome_body, l.confirm_redirect,
 		(SELECT COUNT(*) FROM contacts c WHERE c.list_id = l.id AND c.status='confirmed') AS confirmed,
-		(SELECT COUNT(*) FROM contacts c WHERE c.list_id = l.id AND c.status='pending') AS pending
+		(SELECT COUNT(*) FROM contacts c WHERE c.list_id = l.id AND c.status='pending') AS pending,
+		(SELECT COUNT(*) FROM contacts c WHERE c.list_id = l.id AND c.status='unsubscribed') AS unsubscribed
 		FROM lists l ORDER BY l.created_at DESC`)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "db error"})
@@ -182,7 +228,7 @@ func (a *Admin) listLists(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var x listRow
 		_ = rows.Scan(&x.Key, &x.Name, &x.Type, &x.SenderName, &x.SenderEmail, &x.Provider,
-			&x.WelcomeSubject, &x.WelcomeBody, &x.ConfirmRedirect, &x.Confirmed, &x.Pending)
+			&x.WelcomeSubject, &x.WelcomeBody, &x.ConfirmRedirect, &x.Confirmed, &x.Pending, &x.Unsubscribed)
 		out = append(out, x)
 	}
 	if out == nil {

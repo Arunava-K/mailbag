@@ -10,6 +10,7 @@ export interface MailList {
   confirm_redirect: string;
   confirmed: number;
   pending: number;
+  unsubscribed: number;
 }
 
 export interface Contact {

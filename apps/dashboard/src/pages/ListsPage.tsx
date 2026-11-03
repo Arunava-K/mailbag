@@ -185,6 +185,7 @@ export function ListsPage({
                   <TableHead>Type</TableHead>
                   <TableHead className="text-right">Confirmed</TableHead>
                   <TableHead className="text-right">Pending</TableHead>
+                  <TableHead className="text-right">Unsub</TableHead>
                   <TableHead className="w-10" />
                   <TableHead className="w-10" />
                 </TableRow>
@@ -219,6 +220,7 @@ export function ListsPage({
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{l.confirmed}</TableCell>
                     <TableCell className="text-right tabular-nums">{l.pending}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">{l.unsubscribed}</TableCell>
                     <TableCell>
                       <button
                         type="button"
