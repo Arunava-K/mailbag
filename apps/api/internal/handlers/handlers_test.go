@@ -208,6 +208,69 @@ func TestConfirmFlow(t *testing.T) {
 	}
 }
 
+func TestClientIP(t *testing.T) {
+	makeReq := func(remote, cf string, xff ...string) *http.Request {
+		r := httptest.NewRequest("POST", "/v1/subscribe", nil)
+		r.RemoteAddr = remote
+		if cf != "" {
+			r.Header.Set("CF-Connecting-IP", cf)
+		}
+		if len(xff) > 0 {
+			r.Header.Set("X-Forwarded-For", strings.Join(xff, ", "))
+		}
+		return r
+	}
+
+	cases := []struct {
+		name string
+		r    *http.Request
+		want string
+	}{
+		// Spoofed leftmost entry must be ignored: Traefik appends the real
+		// client, so the rightmost hop names the actual peer.
+		{"spoofed leftmost xff", makeReq("10.0.0.9:443", "", "6.6.6.6", "1.2.3.4"), "1.2.3.4"},
+		{"multi-hop chain", makeReq("10.0.0.9:443", "", "6.6.6.6", "7.7.7.7", "1.2.3.4"), "1.2.3.4"},
+		{"cloudflare wins", makeReq("10.0.0.9:443", "9.9.9.9", "6.6.6.6", "8.8.8.8"), "9.9.9.9"},
+		{"direct connection", makeReq("1.2.3.4:5678", "", ""), "1.2.3.4"},
+		{"xff without port in remote", makeReq("1.2.3.4", "", "5.5.5.5"), "5.5.5.5"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := clientIP(tc.r); got != tc.want {
+				t.Fatalf("clientIP = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The limiter buckets per client IP: a spoofed XFF can no longer mint
+// unlimited buckets, so bursts from one source are capped.
+func TestRateLimitPerClient(t *testing.T) {
+	s, d := testServer(t)
+	createList(t, d, "pk_nl", "newsletter")
+
+	seen429 := false
+	for i := 0; i < 25; i++ {
+		req, _ := http.NewRequest("POST", s.URL+"/v1/subscribe", strings.NewReader(`{"list_key":"pk_nl","email":"u`+string(rune('a'+i))+`@x.co"}`))
+		req.Header.Set("Content-Type", "application/json")
+		// Spoofed leftmost entry changes every request; rightmost (Traefik's
+		// view) stays the real test client.
+		req.Header.Set("X-Forwarded-For", "6.6.6."+string(rune('0'+i))+", 203.0.113.7")
+		resp, err := s.Client().Do(req)
+		if err != nil {
+			t.Fatalf("attempt %d: %v", i, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode == 429 {
+			seen429 = true
+			break
+		}
+	}
+	if !seen429 {
+		t.Fatal("25 spoofed-XFF requests never hit the rate limit")
+	}
+}
+
 func TestAdminAuthRequired(t *testing.T) {
 	s, _ := testServer(t)
 

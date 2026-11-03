@@ -53,17 +53,30 @@ func (p *Public) allow(ip string) bool {
 	return true
 }
 
-// clientIP keys the rate limiter on the real client, not the reverse proxy.
-// Behind Dokploy/Traefik every RemoteAddr is the proxy, so X-Forwarded-For
-// (Traefik sets it) comes first, then Cloudflare, then the socket address.
+// clientIP keys the rate limiter on the real client, not the proxy chain.
+// Topology: client → (Cloudflare?) → Traefik (Dokploy) → app.
+//
+// Trust model — the LEFTmost X-Forwarded-For entry is attacker-controlled
+// (nothing stops a client from sending a fake XFF that proxies then append
+// to), so taking it first let anyone to rotate the limiter's buckets. Instead:
+//
+//   - CF-Connecting-IP: set by Cloudflare, which overwrites it; use it first.
+//   - X-Forwarded-For: append-only across hops, so the RIGHTMOST entry was
+//     added by our own Traefik and names the peer it actually heard.
+//   - otherwise: direct connection, use the socket address.
+//
+// Residual risk: a client that bypasses Cloudflare and reaches Traefik
+// directly can still forge CF-Connecting-IP. Configuring Traefik's
+// forwardedHeaders.trustedIPs closes that (see README notes).
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if first := strings.TrimSpace(strings.Split(xff, ",")[0]); first != "" {
-			return first
-		}
-	}
 	if cf := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); cf != "" {
 		return cf
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		if last := strings.TrimSpace(parts[len(parts)-1]); last != "" {
+			return last
+		}
 	}
 	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		return h
