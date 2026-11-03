@@ -24,10 +24,10 @@ type Public struct {
 	Mailer *mailer.Mailer
 	Cfg    config.Config
 
-	mu       sync.Mutex
-	hits     map[string][]time.Time
-	limit    int
-	window   time.Duration
+	mu     sync.Mutex
+	hits   map[string][]time.Time
+	limit  int
+	window time.Duration
 }
 
 func NewPublic(db *sql.DB, m *mailer.Mailer, cfg config.Config) *Public {
@@ -216,7 +216,9 @@ func (p *Public) confirm(w http.ResponseWriter, r *http.Request) {
 	_, _ = p.DB.Exec(`DELETE FROM tokens WHERE token=?`, token)
 
 	unsub := unsubscribeURL(p.Cfg.BaseURL, listID, email)
-	go func() { _ = p.Mailer.SendWelcome(provider, email, senderName, senderEmail, welcomeSub, welcomeBody, unsub) }()
+	go func() {
+		_ = p.Mailer.SendWelcome(provider, email, senderName, senderEmail, welcomeSub, welcomeBody, unsub)
+	}()
 
 	if redirect != "" {
 		http.Redirect(w, r, redirect, http.StatusFound)

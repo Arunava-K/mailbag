@@ -9,8 +9,8 @@ import (
 
 	"mailbag/internal/config"
 
-	_ "modernc.org/sqlite"
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
+	_ "modernc.org/sqlite"
 )
 
 var statements = []string{

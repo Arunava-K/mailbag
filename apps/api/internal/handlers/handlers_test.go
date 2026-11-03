@@ -528,3 +528,147 @@ func TestListCountsIncludeUnsubscribed(t *testing.T) {
 		t.Fatalf("counts = confirmed:%d pending:%d unsubscribed:%d, want 1/0/1", got.Confirmed, got.Pending, got.Unsubscribed)
 	}
 }
+
+func TestConfirmRedirect(t *testing.T) {
+	s, d := testServer(t)
+	if _, err := d.Exec(`INSERT INTO lists(id, name, type, sender_name, sender_email, provider, confirm_redirect)
+		VALUES('pk_red', 'Red List', 'newsletter', 'T', 't@x.co', 'smtp', 'https://example.com/thanks')`); err != nil {
+		t.Fatal(err)
+	}
+	postJSON(t, s, "/v1/subscribe", `{"list_key":"pk_red","email":"r@x.co"}`)
+	var token string
+	if err := d.QueryRow(`SELECT token FROM tokens WHERE email='r@x.co'`).Scan(&token); err != nil {
+		t.Fatal(err)
+	}
+
+	// The test client follows redirects; disable that to observe the 302.
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := client.Get(s.URL + "/v1/confirm?token=" + token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 302 || resp.Header.Get("Location") != "https://example.com/thanks" {
+		t.Fatalf("confirm redirect = %d %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+}
+
+func TestConfirmExpiredToken(t *testing.T) {
+	s, d := testServer(t)
+	createList(t, d, "pk_nl", "newsletter")
+	if _, err := d.Exec(`INSERT INTO tokens(token, list_id, email, expires_at)
+		VALUES('deadbeef', 'pk_nl', 'old@x.co', datetime('now', '-1 day'))`); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := s.Client().Get(s.URL + "/v1/confirm?token=deadbeef")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 400 {
+		t.Fatalf("expired token = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestResubscribeConfirmedIsNoop(t *testing.T) {
+	s, d := testServer(t)
+	createList(t, d, "pk_nl", "newsletter")
+	postJSON(t, s, "/v1/subscribe", `{"list_key":"pk_nl","email":"happy@x.co"}`)
+	adminReq(t, s, "POST", "/admin/contacts/confirm", `{"list_key":"pk_nl","email":"happy@x.co"}`)
+
+	code, body := postJSON(t, s, "/v1/subscribe", `{"list_key":"pk_nl","email":"happy@x.co"}`)
+	if code != 200 || !strings.Contains(body, "already subscribed") {
+		t.Fatalf("resubscribe = %d %s", code, body)
+	}
+	var tokens int
+	_ = d.QueryRow(`SELECT COUNT(*) FROM tokens WHERE email='happy@x.co'`).Scan(&tokens)
+	if tokens != 0 {
+		t.Fatalf("resubscribe of confirmed contact minted %d tokens", tokens)
+	}
+}
+
+func TestListCRUD(t *testing.T) {
+	s, d := testServer(t)
+
+	code, body := adminReq(t, s, "POST", "/admin/lists",
+		`{"name":"CRUD List","type":"waitlist","sender_name":"T","sender_email":"t@x.co","provider":"plunk","welcome_subject":"Hi","welcome_body":"<p>hi</p>","confirm_redirect":"https://x.co/t"}`)
+	if code != 201 || !strings.Contains(body, `"list_key":"pk_`) {
+		t.Fatalf("create = %d %s", code, body)
+	}
+	var created struct {
+		ListKey string `json:"list_key"`
+	}
+	if err := json.Unmarshal([]byte(body), &created); err != nil {
+		t.Fatal(err)
+	}
+
+	code, body = adminReq(t, s, "PATCH", "/admin/lists?list_key="+created.ListKey, `{"name":"Renamed","type":"newsletter","sender_name":"T","sender_email":"t2@x.co","provider":"smtp"}`)
+	if code != 200 {
+		t.Fatalf("update = %d %s", code, body)
+	}
+	var name, listType, sender string
+	if err := d.QueryRow(`SELECT name, type, sender_email FROM lists WHERE id=?`, created.ListKey).Scan(&name, &listType, &sender); err != nil {
+		t.Fatal(err)
+	}
+	if name != "Renamed" || listType != "newsletter" || sender != "t2@x.co" {
+		t.Fatalf("update persisted wrong values: %q %q %q", name, listType, sender)
+	}
+
+	code, _ = adminReq(t, s, "DELETE", "/admin/lists?list_key="+created.ListKey, "")
+	if code != 200 {
+		t.Fatalf("delete = %d", code)
+	}
+	var n int
+	_ = d.QueryRow(`SELECT COUNT(*) FROM lists`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("delete left %d lists", n)
+	}
+	code, _ = adminReq(t, s, "DELETE", "/admin/lists?list_key="+created.ListKey, "")
+	if code != 404 {
+		t.Fatalf("re-delete = %d, want 404", code)
+	}
+}
+
+func TestStats(t *testing.T) {
+	s, d := testServer(t)
+	createList(t, d, "pk_nl", "newsletter")
+	postJSON(t, s, "/v1/subscribe", `{"list_key":"pk_nl","email":"s@x.co"}`)
+
+	code, body := adminReq(t, s, "GET", "/admin/stats", "")
+	if code != 200 {
+		t.Fatalf("stats = %d", code)
+	}
+	var stats struct {
+		Lists     int `json:"lists"`
+		Confirmed int `json:"confirmed"`
+		Pending   int `json:"pending"`
+		ByDay     []struct {
+			Day   string `json:"day"`
+			Count int    `json:"count"`
+		} `json:"by_day"`
+	}
+	if err := json.Unmarshal([]byte(body), &stats); err != nil {
+		t.Fatalf("decode stats: %v", err)
+	}
+	if stats.Lists != 1 || stats.Pending != 1 || stats.Confirmed != 0 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	if stats.ByDay == nil {
+		t.Fatal("by_day must serialize as [] not null")
+	}
+}
+
+func TestPublicCORSPreflight(t *testing.T) {
+	s, _ := testServer(t)
+	req, _ := http.NewRequest("OPTIONS", s.URL+"/v1/subscribe", nil)
+	req.Header.Set("Origin", "https://anywhere.example")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	resp, err := s.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 204 || resp.Header.Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatalf("preflight = %d allow-origin=%q", resp.StatusCode, resp.Header.Get("Access-Control-Allow-Origin"))
+	}
+}

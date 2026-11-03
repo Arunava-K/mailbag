@@ -207,9 +207,9 @@ type listRow struct {
 	WelcomeSubject  string `json:"welcome_subject"`
 	WelcomeBody     string `json:"welcome_body"`
 	ConfirmRedirect string `json:"confirm_redirect"`
-	Confirmed    int    `json:"confirmed"`
-	Pending      int    `json:"pending"`
-	Unsubscribed int    `json:"unsubscribed"`
+	Confirmed       int    `json:"confirmed"`
+	Pending         int    `json:"pending"`
+	Unsubscribed    int    `json:"unsubscribed"`
 }
 
 func (a *Admin) listLists(w http.ResponseWriter, r *http.Request) {
