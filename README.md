@@ -17,7 +17,11 @@ Single Go binary. Native forms on your sites POST to it. DB: Turso (set `TURSO_*
 - Admin (header `Authorization: Bearer $ADMIN_API_KEY`):
   - `POST /admin/lists` `{name, type: newsletter|waitlist, sender_name, sender_email, provider: smtp|plunk, welcome_subject, welcome_body, confirm_redirect}` → `{list_key}`
   - `GET /admin/lists` → counts per list
-  - `GET /admin/export?list_key=` → CSV
+  - `GET /admin/export?list_key=` → CSV (`email,status,metadata,confirmed_at,created_at`, RFC-4180 quoted)
+  - `GET /admin/contacts?list_key=&status=&q=&limit=&offset=` → paged contacts
+  - `POST /admin/contacts/confirm` `{list_key, email}` — mark confirmed without sending mail (stuck pending)
+  - `POST /admin/contacts/resend` `{list_key, email}` — fresh token + re-send confirm email
+  - `DELETE /admin/contacts?list_key=&email=` — remove a contact and its tokens
 
 CORS is open (`*`) on `/v1/*` so any static site can `fetch()` it directly. Spam defense: IP rate limit (20/min, `X-Forwarded-For` aware behind Traefik), honeypot `website` field, email validation.
 
@@ -68,5 +72,8 @@ cd apps/dashboard && npm install && npm run dev  # -> :5173, /api proxied
 ## Notes
 
 - Dev mode: if `SMTP_HOST` is empty, sends are logged + skipped (full flow still testable via token in DB).
+- `SMTP_PORT=465` uses implicit TLS (port 465 doesn't speak STARTTLS); 587 and others use `net/smtp` STARTTLS as before.
+- Admin auth: constant-time key compare; an IP with 10 failed keys in 15 minutes is locked out of `/admin/*` (correct key included) until the window slides past.
+- Rate limiting derives the client IP as: `CF-Connecting-IP` (Cloudflare overwrites it) → rightmost `X-Forwarded-For` entry (Traefik appends the real peer) → socket address. A client that bypasses Cloudflare straight to Traefik can still forge `CF-Connecting-IP`; setting Traefik's `forwardedHeaders.trustedIPs` to Cloudflare's ranges closes that.
 - Per-list `provider: smtp|plunk` lets newsletters use SMTP and SaaS lists use Plunk.
 - Broadcasts intentionally out of scope for V1 — collection + double opt-in + welcome only.

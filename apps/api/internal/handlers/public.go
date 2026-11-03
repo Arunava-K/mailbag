@@ -24,10 +24,10 @@ type Public struct {
 	Mailer *mailer.Mailer
 	Cfg    config.Config
 
-	mu       sync.Mutex
-	hits     map[string][]time.Time
-	limit    int
-	window   time.Duration
+	mu     sync.Mutex
+	hits   map[string][]time.Time
+	limit  int
+	window time.Duration
 }
 
 func NewPublic(db *sql.DB, m *mailer.Mailer, cfg config.Config) *Public {
@@ -53,17 +53,30 @@ func (p *Public) allow(ip string) bool {
 	return true
 }
 
-// clientIP keys the rate limiter on the real client, not the reverse proxy.
-// Behind Dokploy/Traefik every RemoteAddr is the proxy, so X-Forwarded-For
-// (Traefik sets it) comes first, then Cloudflare, then the socket address.
+// clientIP keys the rate limiter on the real client, not the proxy chain.
+// Topology: client → (Cloudflare?) → Traefik (Dokploy) → app.
+//
+// Trust model — the LEFTmost X-Forwarded-For entry is attacker-controlled
+// (nothing stops a client from sending a fake XFF that proxies then append
+// to), so taking it first let anyone to rotate the limiter's buckets. Instead:
+//
+//   - CF-Connecting-IP: set by Cloudflare, which overwrites it; use it first.
+//   - X-Forwarded-For: append-only across hops, so the RIGHTMOST entry was
+//     added by our own Traefik and names the peer it actually heard.
+//   - otherwise: direct connection, use the socket address.
+//
+// Residual risk: a client that bypasses Cloudflare and reaches Traefik
+// directly can still forge CF-Connecting-IP. Configuring Traefik's
+// forwardedHeaders.trustedIPs closes that (see README notes).
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if first := strings.TrimSpace(strings.Split(xff, ",")[0]); first != "" {
-			return first
-		}
-	}
 	if cf := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); cf != "" {
 		return cf
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		if last := strings.TrimSpace(parts[len(parts)-1]); last != "" {
+			return last
+		}
 	}
 	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		return h
@@ -153,18 +166,19 @@ func (p *Public) subscribe(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"status": "confirmed", "message": "already subscribed"})
 		return
 	}
-	var position int
-	if listType == "waitlist" {
-		_ = p.DB.QueryRow(`SELECT COUNT(*) FROM contacts WHERE list_id = ?`, listID).Scan(&position)
-		position++
-	}
+	// Position is computed in the INSERT itself: a separate COUNT+INSERT pair
+	// raced under concurrent signups (both would claim the same spot).
 	_, err = p.DB.Exec(`INSERT INTO contacts(list_id, email, status, position, metadata)
-		VALUES(?, ?, 'pending', ?, ?)
+		VALUES(?, ?, 'pending', (SELECT COUNT(*) FROM contacts WHERE list_id = ?) + 1, ?)
 		ON CONFLICT(list_id, email) DO UPDATE SET status='pending', metadata=excluded.metadata`,
-		listID, req.Email, position, req.Metadata)
+		listID, req.Email, listID, req.Metadata)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "db error"})
 		return
+	}
+	var position int
+	if listType == "waitlist" {
+		_ = p.DB.QueryRow(`SELECT position FROM contacts WHERE list_id = ? AND email = ?`, listID, req.Email).Scan(&position)
 	}
 
 	tok := make([]byte, 24)
@@ -202,7 +216,9 @@ func (p *Public) confirm(w http.ResponseWriter, r *http.Request) {
 	_, _ = p.DB.Exec(`DELETE FROM tokens WHERE token=?`, token)
 
 	unsub := unsubscribeURL(p.Cfg.BaseURL, listID, email)
-	go func() { _ = p.Mailer.SendWelcome(provider, email, senderName, senderEmail, welcomeSub, welcomeBody, unsub) }()
+	go func() {
+		_ = p.Mailer.SendWelcome(provider, email, senderName, senderEmail, welcomeSub, welcomeBody, unsub)
+	}()
 
 	if redirect != "" {
 		http.Redirect(w, r, redirect, http.StatusFound)

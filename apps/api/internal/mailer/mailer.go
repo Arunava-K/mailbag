@@ -2,6 +2,7 @@ package mailer
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -65,11 +66,51 @@ func (m *Mailer) sendSMTP(fromName, fromEmail, to, subject, html string) error {
 	msg.WriteString(html)
 
 	addr := m.cfg.SMTPHost + ":" + m.cfg.SMTPPort
+	if m.cfg.SMTPPort == "465" {
+		// Port 465 is implicit TLS (no STARTTLS); net/smtp.SendMail can't do it.
+		return m.sendSMTPImplicitTLS(m.cfg.SMTPHost, addr, from, to, msg.Bytes())
+	}
 	var auth smtp.Auth
 	if m.cfg.SMTPUser != "" {
 		auth = smtp.PlainAuth("", m.cfg.SMTPUser, m.cfg.SMTPPass, m.cfg.SMTPHost)
 	}
 	return smtp.SendMail(addr, auth, from, []string{to}, msg.Bytes())
+}
+
+func (m *Mailer) sendSMTPImplicitTLS(host, addr, from, to string, msg []byte) error {
+	conn, err := tls.Dial("tcp", addr, nil)
+	if err != nil {
+		return err
+	}
+	c, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	if m.cfg.SMTPUser != "" {
+		if ok, _ := c.Extension("AUTH"); ok {
+			if err := c.Auth(smtp.PlainAuth("", m.cfg.SMTPUser, m.cfg.SMTPPass, host)); err != nil {
+				return err
+			}
+		}
+	}
+	if err := c.Mail(from); err != nil {
+		return err
+	}
+	if err := c.Rcpt(to); err != nil {
+		return err
+	}
+	w, err := c.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(msg); err != nil {
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	return c.Quit()
 }
 
 func (m *Mailer) sendPlunk(fromName, fromEmail, to, subject, html string) error {

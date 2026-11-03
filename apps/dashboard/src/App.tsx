@@ -161,7 +161,7 @@ export default function App() {
             starred={starred} onToggleStar={toggleStar} openList={openList} createNonce={createNonce}
           />
         )}
-        {typeof view === "string" && view === "contacts" && <ContactsPage lists={lists} adminKey={adminKey} toast={toast} />}
+        {typeof view === "string" && view === "contacts" && <ContactsPage lists={lists} adminKey={adminKey} toast={toast} refresh={refresh} />}
         {typeof view === "string" && view === "settings" && (
           <SettingsPage collectorUrl={collectorUrl()} adminKey={adminKey} apiOk={apiOk} toast={toast} onLock={lock} />
         )}

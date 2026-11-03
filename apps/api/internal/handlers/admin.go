@@ -2,37 +2,87 @@ package handlers
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
+
+	"mailbag/internal/mailer"
 )
 
 // Admin handles /admin/* (Bearer ADMIN_API_KEY).
 type Admin struct {
 	DB      *sql.DB
 	Key     string
+	Mailer  *mailer.Mailer
+	BaseURL string
+
 	origins []string
+
+	// Failed-auth throttling: per-IP counters, lockout after too many bad
+	// keys so ADMIN_API_KEY can't be brute-forced.
+	mu    sync.Mutex
+	fails map[string][]time.Time
 }
 
-func NewAdmin(db *sql.DB, key, originsCSV string) *Admin {
+const (
+	adminFailLimit  = 10
+	adminFailWindow = 15 * time.Minute
+)
+
+func NewAdmin(db *sql.DB, m *mailer.Mailer, baseURL, key, originsCSV string) *Admin {
 	var origins []string
 	for _, o := range strings.Split(originsCSV, ",") {
 		if o = strings.TrimSpace(o); o != "" {
 			origins = append(origins, o)
 		}
 	}
-	return &Admin{DB: db, Key: key, origins: origins}
+	return &Admin{DB: db, Key: key, Mailer: m, BaseURL: baseURL, origins: origins, fails: map[string][]time.Time{}}
+}
+
+func (a *Admin) pruneFails(ip string, now time.Time) []time.Time {
+	cut := now.Add(-adminFailWindow)
+	keep := a.fails[ip][:0]
+	for _, t := range a.fails[ip] {
+		if t.After(cut) {
+			keep = append(keep, t)
+		}
+	}
+	if len(keep) == 0 {
+		delete(a.fails, ip)
+		return nil
+	}
+	a.fails[ip] = keep
+	return keep
 }
 
 func (a *Admin) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if "Bearer "+a.Key != r.Header.Get("Authorization") {
+		ip := clientIP(r)
+		a.mu.Lock()
+		fails := a.pruneFails(ip, time.Now())
+		a.mu.Unlock()
+		if len(fails) >= adminFailLimit {
+			writeJSON(w, 429, map[string]string{"error": "too many failed attempts, retry later"})
+			return
+		}
+		// Constant-time: key length is public anyway (config), the
+		// comparison itself must not leak how many bytes matched.
+		if subtle.ConstantTimeCompare([]byte("Bearer "+a.Key), []byte(r.Header.Get("Authorization"))) != 1 {
+			a.mu.Lock()
+			a.fails[ip] = append(a.pruneFails(ip, time.Now()), time.Now())
+			a.mu.Unlock()
 			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
 			return
 		}
+		a.mu.Lock()
+		delete(a.fails, ip)
+		a.mu.Unlock()
 		next(w, r)
 	}
 }
@@ -80,7 +130,18 @@ func (a *Admin) Routes(mux *http.ServeMux) {
 			writeJSON(w, 405, map[string]string{"error": "method not allowed"})
 		}
 	})))
-	mux.HandleFunc("/admin/contacts", a.cors(a.auth(a.listContacts)))
+	mux.HandleFunc("/admin/contacts", a.cors(a.auth(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "GET":
+			a.listContacts(w, r)
+		case "DELETE":
+			a.deleteContact(w, r)
+		default:
+			writeJSON(w, 405, map[string]string{"error": "method not allowed"})
+		}
+	})))
+	mux.HandleFunc("/admin/contacts/confirm", a.cors(a.auth(a.confirmContact)))
+	mux.HandleFunc("/admin/contacts/resend", a.cors(a.auth(a.resendContact)))
 	mux.HandleFunc("/admin/stats", a.cors(a.auth(a.stats)))
 	mux.HandleFunc("/admin/export", a.cors(a.auth(a.exportCSV)))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -148,13 +209,15 @@ type listRow struct {
 	ConfirmRedirect string `json:"confirm_redirect"`
 	Confirmed       int    `json:"confirmed"`
 	Pending         int    `json:"pending"`
+	Unsubscribed    int    `json:"unsubscribed"`
 }
 
 func (a *Admin) listLists(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.DB.Query(`SELECT l.id, l.name, l.type, l.sender_name, l.sender_email, l.provider,
 		l.welcome_subject, l.welcome_body, l.confirm_redirect,
 		(SELECT COUNT(*) FROM contacts c WHERE c.list_id = l.id AND c.status='confirmed') AS confirmed,
-		(SELECT COUNT(*) FROM contacts c WHERE c.list_id = l.id AND c.status='pending') AS pending
+		(SELECT COUNT(*) FROM contacts c WHERE c.list_id = l.id AND c.status='pending') AS pending,
+		(SELECT COUNT(*) FROM contacts c WHERE c.list_id = l.id AND c.status='unsubscribed') AS unsubscribed
 		FROM lists l ORDER BY l.created_at DESC`)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "db error"})
@@ -165,7 +228,7 @@ func (a *Admin) listLists(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var x listRow
 		_ = rows.Scan(&x.Key, &x.Name, &x.Type, &x.SenderName, &x.SenderEmail, &x.Provider,
-			&x.WelcomeSubject, &x.WelcomeBody, &x.ConfirmRedirect, &x.Confirmed, &x.Pending)
+			&x.WelcomeSubject, &x.WelcomeBody, &x.ConfirmRedirect, &x.Confirmed, &x.Pending, &x.Unsubscribed)
 		out = append(out, x)
 	}
 	if out == nil {
@@ -233,6 +296,7 @@ type contactRow struct {
 	Email       string  `json:"email"`
 	Status      string  `json:"status"`
 	Position    int     `json:"position"`
+	Metadata    string  `json:"metadata"`
 	ConfirmedAt *string `json:"confirmed_at"`
 	CreatedAt   string  `json:"created_at"`
 }
@@ -264,7 +328,7 @@ func (a *Admin) listContacts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	args = append(args, limit, offset)
-	rows, err := a.DB.Query(`SELECT email, status, position, confirmed_at, created_at FROM contacts
+	rows, err := a.DB.Query(`SELECT email, status, position, metadata, confirmed_at, created_at FROM contacts
 		WHERE `+where+` ORDER BY id DESC LIMIT ? OFFSET ?`, args...)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "db error"})
@@ -275,7 +339,7 @@ func (a *Admin) listContacts(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var c contactRow
 		var confirmed sql.NullString
-		_ = rows.Scan(&c.Email, &c.Status, &c.Position, &confirmed, &c.CreatedAt)
+		_ = rows.Scan(&c.Email, &c.Status, &c.Position, &c.Metadata, &confirmed, &c.CreatedAt)
 		if confirmed.Valid {
 			s := confirmed.String
 			c.ConfirmedAt = &s
@@ -286,6 +350,113 @@ func (a *Admin) listContacts(w http.ResponseWriter, r *http.Request) {
 		out = []contactRow{}
 	}
 	writeJSON(w, 200, map[string]any{"total": total, "contacts": out})
+}
+
+type contactReq struct {
+	ListKey string `json:"list_key"`
+	Email   string `json:"email"`
+}
+
+// deleteContact removes a contact (and any of its pending tokens).
+func (a *Admin) deleteContact(w http.ResponseWriter, r *http.Request) {
+	listKey := r.URL.Query().Get("list_key")
+	email := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("email")))
+	if listKey == "" || email == "" {
+		writeJSON(w, 400, map[string]string{"error": "list_key and email required"})
+		return
+	}
+	tx, err := a.DB.Begin()
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "db error"})
+		return
+	}
+	defer tx.Rollback()
+	_, _ = tx.Exec(`DELETE FROM tokens WHERE list_id=? AND email=?`, listKey, email)
+	res, err := tx.Exec(`DELETE FROM contacts WHERE list_id=? AND email=?`, listKey, email)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "db error"})
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		writeJSON(w, 404, map[string]string{"error": "unknown contact"})
+		return
+	}
+	_ = tx.Commit()
+	writeJSON(w, 200, map[string]string{"status": "deleted"})
+}
+
+// confirmContact marks a contact confirmed without sending mail — for
+// pending signups whose confirm email was lost (e.g. SMTP outage).
+func (a *Admin) confirmContact(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeJSON(w, 405, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var req contactReq
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid json"})
+		return
+	}
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	if req.ListKey == "" || req.Email == "" {
+		writeJSON(w, 400, map[string]string{"error": "list_key and email required"})
+		return
+	}
+	res, err := a.DB.Exec(`UPDATE contacts SET status='confirmed', confirmed_at=CURRENT_TIMESTAMP
+		WHERE list_id=? AND email=?`, req.ListKey, req.Email)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "db error"})
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		writeJSON(w, 404, map[string]string{"error": "unknown contact"})
+		return
+	}
+	_, _ = a.DB.Exec(`DELETE FROM tokens WHERE list_id=? AND email=?`, req.ListKey, req.Email)
+	writeJSON(w, 200, map[string]string{"status": "confirmed"})
+}
+
+// resendContact issues a fresh confirm token and re-sends the email.
+func (a *Admin) resendContact(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeJSON(w, 405, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var req contactReq
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid json"})
+		return
+	}
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	if req.ListKey == "" || req.Email == "" {
+		writeJSON(w, 400, map[string]string{"error": "list_key and email required"})
+		return
+	}
+	var status string
+	if err := a.DB.QueryRow(`SELECT status FROM contacts WHERE list_id=? AND email=?`, req.ListKey, req.Email).Scan(&status); err != nil {
+		writeJSON(w, 404, map[string]string{"error": "unknown contact"})
+		return
+	}
+	if status == "confirmed" {
+		writeJSON(w, 400, map[string]string{"error": "already confirmed"})
+		return
+	}
+	var listName, provider, senderName, senderEmail string
+	if err := a.DB.QueryRow(`SELECT name, provider, sender_name, sender_email FROM lists WHERE id=?`, req.ListKey).
+		Scan(&listName, &provider, &senderName, &senderEmail); err != nil {
+		writeJSON(w, 404, map[string]string{"error": "unknown list"})
+		return
+	}
+	tok := make([]byte, 24)
+	_, _ = rand.Read(tok)
+	token := hex.EncodeToString(tok)
+	_, _ = a.DB.Exec(`INSERT INTO tokens(token, list_id, email, expires_at) VALUES(?, ?, ?, ?)`,
+		token, req.ListKey, req.Email, time.Now().Add(48*time.Hour))
+	confirmURL := strings.TrimRight(a.BaseURL, "/") + "/v1/confirm?token=" + token
+	go func() { _ = a.Mailer.SendConfirm(provider, req.Email, senderName, senderEmail, confirmURL, listName) }()
+	writeJSON(w, 200, map[string]string{"status": "sent"})
 }
 
 func (a *Admin) stats(w http.ResponseWriter, r *http.Request) {
@@ -336,13 +507,22 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
+// csvField quotes a field when required (RFC 4180): commas, quotes, and line
+// breaks otherwise break the column layout — metadata regularly contains them.
+func csvField(s string) string {
+	if strings.ContainsAny(s, ",\"\n\r") {
+		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	}
+	return s
+}
+
 func (a *Admin) exportCSV(w http.ResponseWriter, r *http.Request) {
 	listKey := r.URL.Query().Get("list_key")
 	if listKey == "" {
 		writeJSON(w, 400, map[string]string{"error": "list_key required"})
 		return
 	}
-	rows, err := a.DB.Query(`SELECT email, status, confirmed_at, created_at FROM contacts WHERE list_id = ? ORDER BY id`, listKey)
+	rows, err := a.DB.Query(`SELECT email, status, metadata, confirmed_at, created_at FROM contacts WHERE list_id = ? ORDER BY id`, listKey)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "db error"})
 		return
@@ -350,11 +530,13 @@ func (a *Admin) exportCSV(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment; filename=\"export.csv\"")
-	_, _ = w.Write([]byte("email,status,confirmed_at,created_at\n"))
+	_, _ = w.Write([]byte("email,status,metadata,confirmed_at,created_at\n"))
 	for rows.Next() {
-		var email, status string
+		var email, status, metadata string
 		var confirmed, created sql.NullString
-		_ = rows.Scan(&email, &status, &confirmed, &created)
-		_, _ = w.Write([]byte(strings.Join([]string{email, status, confirmed.String, created.String}, ",") + "\n"))
+		_ = rows.Scan(&email, &status, &metadata, &confirmed, &created)
+		_, _ = w.Write([]byte(strings.Join([]string{
+			csvField(email), csvField(status), csvField(metadata), csvField(confirmed.String), csvField(created.String),
+		}, ",") + "\n"))
 	}
 }

@@ -262,7 +262,7 @@ export function ListDetail({
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_280px]">
         <div className="min-w-0">
-          {tab === "contacts" && <ContactsTable listKey={list.list_key} adminKey={adminKey} toast={toast} />}
+          {tab === "contacts" && <ContactsTable listKey={list.list_key} adminKey={adminKey} toast={toast} refresh={refresh} />}
           {tab === "activity" && <Activity listKey={list.list_key} adminKey={adminKey} toast={toast} />}
           {tab === "embed" && <EmbedTab list={list} collectorUrl={collectorUrl} toast={toast} />}
           {tab === "settings" && (
@@ -304,6 +304,7 @@ export function ListDetail({
                 } />
                 <DetailRow k="Confirmed" v={<span className="tabular-nums">{list.confirmed}</span>} />
                 <DetailRow k="Pending" v={<span className="tabular-nums">{list.pending}</span>} />
+                {list.unsubscribed > 0 && <DetailRow k="Unsubscribed" v={<span className="tabular-nums">{list.unsubscribed}</span>} />}
                 {list.confirm_redirect && <DetailRow k="Redirect" v={<span className="truncate text-muted-foreground">{list.confirm_redirect}</span>} />}
               </dl>
             </CardContent>

@@ -6,11 +6,12 @@ import type { MailList } from "../lib/api";
 import type { ToastFn } from "../lib/toast";
 
 export function ContactsPage({
-  lists, adminKey, toast,
+  lists, adminKey, toast, refresh,
 }: {
   lists: MailList[];
   adminKey: string;
   toast: ToastFn;
+  refresh: () => void;
 }) {
   const [listKey, setListKey] = useState(lists[0]?.list_key ?? "");
   useEffect(() => {
@@ -47,7 +48,7 @@ export function ContactsPage({
           </select>
         }
       />
-      {listKey && <ContactsTable listKey={listKey} adminKey={adminKey} toast={toast} />}
+      {listKey && <ContactsTable listKey={listKey} adminKey={adminKey} toast={toast} refresh={refresh} />}
     </div>
   );
 }
