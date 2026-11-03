@@ -39,5 +39,5 @@ There is no lint setup in either app. CI (`.github/workflows/ci.yml`) runs `go v
 - DB mode switch: if `TURSO_DATABASE_URL` is set, Turso is used and the `/data` SQLite volume is ignored; otherwise local SQLite in `DATA_DIR`. Schema is in `internal/db/db.go`.
 - If `SMTP_HOST` is empty, mail sends are logged and skipped, but the double opt-in flow still works (confirm token lands in the DB). Per-list `provider: smtp|plunk` selects the sender.
 - `BASE_URL` must be correct in env — confirm/unsubscribe links are built from it.
-- Rate limiting trusts `X-Forwarded-For` (deployed behind Traefik/Dokploy); `website` is a honeypot field on `/v1/subscribe`, not real data.
+- Rate limiting derives the client IP as `CF-Connecting-IP` → rightmost `X-Forwarded-For` hop (leftmost is spoofable) → socket address; `website` is a honeypot field on `/v1/subscribe`, not real data.
 - Broadcasts are intentionally out of scope for V1 (collection + double opt-in + welcome mail only).
