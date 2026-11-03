@@ -78,10 +78,19 @@ func Open(cfg config.Config) (*sql.DB, error) {
 		}
 		database.SetMaxOpenConns(1)
 	}
-	for _, s := range statements {
-		if _, err := database.Exec(s); err != nil {
-			return nil, fmt.Errorf("schema: %w", err)
-		}
+	if err := EnsureSchema(database); err != nil {
+		return nil, err
 	}
 	return database, nil
+}
+
+// EnsureSchema creates tables if missing. Open calls it; tests use it directly
+// on a throwaway database.
+func EnsureSchema(database *sql.DB) error {
+	for _, s := range statements {
+		if _, err := database.Exec(s); err != nil {
+			return fmt.Errorf("schema: %w", err)
+		}
+	}
+	return nil
 }

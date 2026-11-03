@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -199,7 +201,7 @@ func (p *Public) confirm(w http.ResponseWriter, r *http.Request) {
 	_, _ = p.DB.Exec(`UPDATE contacts SET status='confirmed', confirmed_at=CURRENT_TIMESTAMP WHERE list_id=? AND email=?`, listID, email)
 	_, _ = p.DB.Exec(`DELETE FROM tokens WHERE token=?`, token)
 
-	unsub := strings.TrimRight(p.Cfg.BaseURL, "/") + "/v1/unsubscribe"
+	unsub := unsubscribeURL(p.Cfg.BaseURL, listID, email)
 	go func() { _ = p.Mailer.SendWelcome(provider, email, senderName, senderEmail, welcomeSub, welcomeBody, unsub) }()
 
 	if redirect != "" {
@@ -208,6 +210,14 @@ func (p *Public) confirm(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html")
 	_, _ = w.Write([]byte(`<html><body style="font-family:sans-serif;text-align:center;padding:64px"><h2>You're confirmed.</h2><p>You can close this tab.</p></body></html>`))
+}
+
+// unsubscribeURL builds the one-click opt-out link used in welcome emails.
+// The GET handler requires both list_key and email — a bare /v1/unsubscribe
+// returns 405 — so every caller must go through here.
+func unsubscribeURL(baseURL, listID, email string) string {
+	return fmt.Sprintf("%s/v1/unsubscribe?list_key=%s&email=%s",
+		strings.TrimRight(baseURL, "/"), url.QueryEscape(listID), url.QueryEscape(email))
 }
 
 func (p *Public) unsubscribe(w http.ResponseWriter, r *http.Request) {
