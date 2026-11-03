@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"mailbag/internal/config"
 	"mailbag/internal/db"
@@ -16,6 +17,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("db: %v", err)
 	}
+	db.PurgeExpiredTokens(database) // catch up on anything that expired while down
+	go func() {
+		for range time.NewTicker(time.Hour).C {
+			db.PurgeExpiredTokens(database)
+		}
+	}()
 	m := mailer.New(cfg)
 	mux := http.NewServeMux()
 	handlers.NewPublic(database, m, cfg).Routes(mux)

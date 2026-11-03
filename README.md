@@ -17,7 +17,7 @@ Single Go binary. Native forms on your sites POST to it. DB: Turso (set `TURSO_*
 - Admin (header `Authorization: Bearer $ADMIN_API_KEY`):
   - `POST /admin/lists` `{name, type: newsletter|waitlist, sender_name, sender_email, provider: smtp|plunk, welcome_subject, welcome_body, confirm_redirect}` → `{list_key}`
   - `GET /admin/lists` → counts per list
-  - `GET /admin/export?list_key=` → CSV
+  - `GET /admin/export?list_key=` → CSV (`email,status,metadata,confirmed_at,created_at`, RFC-4180 quoted)
   - `GET /admin/contacts?list_key=&status=&q=&limit=&offset=` → paged contacts
   - `POST /admin/contacts/confirm` `{list_key, email}` — mark confirmed without sending mail (stuck pending)
   - `POST /admin/contacts/resend` `{list_key, email}` — fresh token + re-send confirm email

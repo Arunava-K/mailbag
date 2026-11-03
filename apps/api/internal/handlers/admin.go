@@ -250,6 +250,7 @@ type contactRow struct {
 	Email       string  `json:"email"`
 	Status      string  `json:"status"`
 	Position    int     `json:"position"`
+	Metadata    string  `json:"metadata"`
 	ConfirmedAt *string `json:"confirmed_at"`
 	CreatedAt   string  `json:"created_at"`
 }
@@ -281,7 +282,7 @@ func (a *Admin) listContacts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	args = append(args, limit, offset)
-	rows, err := a.DB.Query(`SELECT email, status, position, confirmed_at, created_at FROM contacts
+	rows, err := a.DB.Query(`SELECT email, status, position, metadata, confirmed_at, created_at FROM contacts
 		WHERE `+where+` ORDER BY id DESC LIMIT ? OFFSET ?`, args...)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "db error"})
@@ -292,7 +293,7 @@ func (a *Admin) listContacts(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var c contactRow
 		var confirmed sql.NullString
-		_ = rows.Scan(&c.Email, &c.Status, &c.Position, &confirmed, &c.CreatedAt)
+		_ = rows.Scan(&c.Email, &c.Status, &c.Position, &c.Metadata, &confirmed, &c.CreatedAt)
 		if confirmed.Valid {
 			s := confirmed.String
 			c.ConfirmedAt = &s
@@ -460,13 +461,22 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
+// csvField quotes a field when required (RFC 4180): commas, quotes, and line
+// breaks otherwise break the column layout — metadata regularly contains them.
+func csvField(s string) string {
+	if strings.ContainsAny(s, ",\"\n\r") {
+		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	}
+	return s
+}
+
 func (a *Admin) exportCSV(w http.ResponseWriter, r *http.Request) {
 	listKey := r.URL.Query().Get("list_key")
 	if listKey == "" {
 		writeJSON(w, 400, map[string]string{"error": "list_key required"})
 		return
 	}
-	rows, err := a.DB.Query(`SELECT email, status, confirmed_at, created_at FROM contacts WHERE list_id = ? ORDER BY id`, listKey)
+	rows, err := a.DB.Query(`SELECT email, status, metadata, confirmed_at, created_at FROM contacts WHERE list_id = ? ORDER BY id`, listKey)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "db error"})
 		return
@@ -474,11 +484,13 @@ func (a *Admin) exportCSV(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	w.Header().Set("Content-Type", "text/csv")
 	w.Header().Set("Content-Disposition", "attachment; filename=\"export.csv\"")
-	_, _ = w.Write([]byte("email,status,confirmed_at,created_at\n"))
+	_, _ = w.Write([]byte("email,status,metadata,confirmed_at,created_at\n"))
 	for rows.Next() {
-		var email, status string
+		var email, status, metadata string
 		var confirmed, created sql.NullString
-		_ = rows.Scan(&email, &status, &confirmed, &created)
-		_, _ = w.Write([]byte(strings.Join([]string{email, status, confirmed.String, created.String}, ",") + "\n"))
+		_ = rows.Scan(&email, &status, &metadata, &confirmed, &created)
+		_, _ = w.Write([]byte(strings.Join([]string{
+			csvField(email), csvField(status), csvField(metadata), csvField(confirmed.String), csvField(created.String),
+		}, ",") + "\n"))
 	}
 }

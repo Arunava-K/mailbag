@@ -94,3 +94,10 @@ func EnsureSchema(database *sql.DB) error {
 	}
 	return nil
 }
+
+// PurgeExpiredTokens removes confirm tokens past their expiry. Only confirmed
+// tokens are deleted during normal operation, so everything else would pile
+// up forever without this. main runs it at boot and hourly.
+func PurgeExpiredTokens(database *sql.DB) {
+	_, _ = database.Exec(`DELETE FROM tokens WHERE expires_at <= CURRENT_TIMESTAMP`)
+}

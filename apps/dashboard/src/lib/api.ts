@@ -16,6 +16,7 @@ export interface Contact {
   email: string;
   status: "confirmed" | "pending" | "unsubscribed";
   position: number;
+  metadata: string;
   confirmed_at: string | null;
   created_at: string;
 }

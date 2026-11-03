@@ -2,13 +2,16 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"mailbag/internal/config"
 	"mailbag/internal/db"
@@ -376,5 +379,90 @@ func TestContactMutations(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != 401 {
 		t.Fatalf("unauth delete = %d, want 401", resp.StatusCode)
+	}
+}
+
+// Metadata collected at subscribe time must come back out.
+func TestMetadataRoundtrip(t *testing.T) {
+	s, d := testServer(t)
+	createList(t, d, "pk_nl", "newsletter")
+	meta := `{"source":"/pricing","plan":"pro"}`
+	code, body := postJSON(t, s, "/v1/subscribe", `{"list_key":"pk_nl","email":"meta@x.co","metadata":`+strconv.Quote(meta)+`}`)
+	if code != 200 {
+		t.Fatalf("subscribe = %d %s", code, body)
+	}
+
+	code2, respBody := adminReq(t, s, "GET", "/admin/contacts?list_key=pk_nl", "")
+	if code2 != 200 {
+		t.Fatalf("contacts = %d %s", code2, respBody)
+	}
+	var out struct {
+		Contacts []struct {
+			Email    string `json:"email"`
+			Metadata string `json:"metadata"`
+		} `json:"contacts"`
+	}
+	if err := json.Unmarshal([]byte(respBody), &out); err != nil {
+		t.Fatalf("decode contacts: %v", err)
+	}
+	if len(out.Contacts) != 1 || out.Contacts[0].Metadata != meta {
+		t.Fatalf("metadata roundtrip = %+v, want %q", out.Contacts, meta)
+	}
+}
+
+func TestExportCSVQuotesFields(t *testing.T) {
+	s, d := testServer(t)
+	createList(t, d, "pk_nl", "newsletter")
+	// Metadata with a comma, a quote, and a newline must not break columns.
+	tricky := `{"a":"x,y","b":"say \"hi\""}`
+	postJSON(t, s, "/v1/subscribe", `{"list_key":"pk_nl","email":"tricky@x.co","metadata":`+strconv.Quote(tricky)+`}`)
+
+	code, body := adminReq(t, s, "GET", "/admin/export?list_key=pk_nl", "")
+	if code != 200 {
+		t.Fatalf("export = %d", code)
+	}
+	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("export rows = %d, want 2 (header + 1 contact)", len(lines))
+	}
+	row := lines[1]
+	// The honest check: a real CSV parser must see exactly 5 fields.
+	fields, err := csv.NewReader(strings.NewReader(row)).Read()
+	if err != nil {
+		t.Fatalf("row is not parseable CSV: %v — %s", err, row)
+	}
+	if len(fields) != 5 {
+		t.Fatalf("row parses into %d fields, want 5: %q", len(fields), fields)
+	}
+	if fields[0] != "tricky@x.co" || fields[2] != tricky {
+		t.Fatalf("roundtrip mismatch: %q", fields)
+	}
+}
+
+func TestPurgeExpiredTokens(t *testing.T) {
+	_, d := testServer(t)
+	createList(t, d, "pk_nl", "newsletter")
+
+	ins := func(token, when string) {
+		t.Helper()
+		if _, err := d.Exec(`INSERT INTO tokens(token, list_id, email, expires_at) VALUES(?, 'pk_nl', 'x@y.co', ?)`, token, when); err != nil {
+			t.Fatalf("insert token: %v", err)
+		}
+	}
+	ins("fresh", time.Now().Add(time.Hour).UTC().Format("2006-01-02 15:04:05"))
+	ins("stale", time.Now().Add(-time.Hour).UTC().Format("2006-01-02 15:04:05"))
+
+	db.PurgeExpiredTokens(d)
+
+	var n int
+	if err := d.QueryRow(`SELECT COUNT(*) FROM tokens`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("tokens after purge = %d, want 1 (fresh only)", n)
+	}
+	var token string
+	if err := d.QueryRow(`SELECT token FROM tokens`).Scan(&token); err != nil || token != "fresh" {
+		t.Fatalf("purge kept the wrong token: %q", token)
 	}
 }

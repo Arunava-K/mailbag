@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { Check, MoreHorizontal, Search, Send, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,29 @@ function statusVariant(s: string): "default" | "secondary" | "outline" {
   return "outline";
 }
 
+function MetadataDetail({ c }: { c: Contact }) {
+  let pretty = c.metadata || "{}";
+  try {
+    pretty = JSON.stringify(JSON.parse(c.metadata || "{}"), null, 2);
+  } catch {
+    // not JSON — show raw
+  }
+  return (
+    <div className="flex flex-col gap-1 px-2 py-2 text-xs text-muted-foreground md:flex-row md:items-start md:gap-6">
+      {c.position > 0 && (
+        <div>
+          <span className="font-medium">Position</span>
+          <p className="tabular-nums">{c.position}</p>
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <span className="font-medium">Metadata</span>
+        <pre className="mt-0.5 max-h-32 overflow-auto rounded-md bg-muted/60 p-2 font-mono text-[11px] whitespace-pre-wrap">{pretty}</pre>
+      </div>
+    </div>
+  );
+}
+
 /** Shared paged contacts table used by list detail + global contacts screen. */
 export function ContactsTable({
   listKey,
@@ -55,11 +78,13 @@ export function ContactsTable({
   const [total, setTotal] = useState(0);
   const [rows, setRows] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
 
   useEffect(() => {
     setPage(0);
     setQ(initialQ);
     setDebouncedQ(initialQ);
+    setOpen(null);
   }, [listKey, initialQ]);
 
   useEffect(() => {
@@ -158,7 +183,8 @@ export function ContactsTable({
               ))
             ) : (
               rows.map((c) => (
-                <TableRow key={c.email}>
+                <Fragment key={c.email}>
+                <TableRow className="cursor-pointer" onClick={() => setOpen(open === c.email ? null : c.email)}>
                   <TableCell className="font-mono text-xs">{c.email}</TableCell>
                   <TableCell>
                     <Badge variant={statusVariant(c.status)}>{c.status}</Badge>
@@ -204,6 +230,14 @@ export function ContactsTable({
                     </DropdownMenu>
                   </TableCell>
                 </TableRow>
+                {open === c.email && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="bg-muted/30 p-0">
+                      <MetadataDetail c={c} />
+                    </TableCell>
+                  </TableRow>
+                )}
+                </Fragment>
               ))
             )}
             {rows.length === 0 && !loading && (
