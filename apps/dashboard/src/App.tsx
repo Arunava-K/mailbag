@@ -11,6 +11,7 @@ import { ListsPage } from "./pages/ListsPage";
 import { Overview } from "./pages/Overview";
 import { SettingsPage } from "./pages/SettingsPage";
 import { cn } from "./lib/utils";
+import type { BuildInfo } from "./lib/version";
 import "./index.css";
 
 type View = Screen | { name: "list"; key: string };
@@ -59,6 +60,7 @@ export default function App() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(false);
   const [apiOk, setApiOk] = useState(true);
+  const [apiBuild, setApiBuild] = useState<BuildInfo | null>(null);
   const [palette, setPalette] = useState(false);
   const [createNonce, setCreateNonce] = useState(0);
   const [starred, setStarred] = useState<string[]>(loadStars);
@@ -90,6 +92,23 @@ export default function App() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Which build the API is running — compared against this dashboard's own
+  // build so a half-finished deploy is visible instead of silent.
+  useEffect(() => {
+    let alive = true;
+    api
+      .version()
+      .then((v) => {
+        if (alive) setApiBuild(v);
+      })
+      .catch(() => {
+        if (alive) setApiBuild(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -140,6 +159,7 @@ export default function App() {
           setCreateNonce((n) => n + 1);
         }}
         apiOk={apiOk}
+        apiBuild={apiBuild}
       >
         {typeof view === "string" && view === "overview" && (
           <Overview
@@ -163,7 +183,7 @@ export default function App() {
         )}
         {typeof view === "string" && view === "contacts" && <ContactsPage lists={lists} adminKey={adminKey} toast={toast} refresh={refresh} />}
         {typeof view === "string" && view === "settings" && (
-          <SettingsPage collectorUrl={collectorUrl()} adminKey={adminKey} apiOk={apiOk} toast={toast} onLock={lock} />
+          <SettingsPage collectorUrl={collectorUrl()} adminKey={adminKey} apiOk={apiOk} apiBuild={apiBuild} toast={toast} onLock={lock} />
         )}
         {typeof view === "object" && (
           activeList ? (

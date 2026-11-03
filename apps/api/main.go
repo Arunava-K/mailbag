@@ -9,6 +9,7 @@ import (
 	"mailbag/internal/db"
 	"mailbag/internal/handlers"
 	"mailbag/internal/mailer"
+	"mailbag/internal/version"
 )
 
 func main() {
@@ -28,7 +29,7 @@ func main() {
 	handlers.NewPublic(database, m, cfg).Routes(mux)
 	handlers.NewAdmin(database, m, cfg.BaseURL, cfg.AdminAPIKey, cfg.AdminOrigins).Routes(mux)
 
-	log.Printf("mailbag on :%s base=%s db=%s", cfg.Port, cfg.BaseURL, dbMode(cfg))
+	log.Printf("mailbag %s on :%s base=%s db=%s", version.String(), cfg.Port, cfg.BaseURL, dbMode(cfg))
 	log.Fatal(http.ListenAndServe(":"+cfg.Port, mux))
 }
 

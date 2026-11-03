@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useTheme } from "@/components/watermelon/astrix-dashboard/components/astrix/theme-provider";
 import type { MailList } from "../lib/api";
+import { buildLabel, buildsDiffer, dashboardBuild, formatBuildTime, shortCommit, type BuildInfo } from "@/lib/version";
 import { cn } from "@/lib/utils";
 
 export type Screen = "overview" | "lists" | "contacts" | "settings";
@@ -182,6 +183,12 @@ function MailbagSidebar({
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        <p
+          title={`Dashboard build ${dashboardBuild.commit} — ${formatBuildTime(dashboardBuild.build_time)}`}
+          className="truncate px-3 pb-1 text-[11px] text-muted-foreground group-data-[collapsible=icon]:hidden"
+        >
+          {buildLabel(dashboardBuild)}
+        </p>
       </SidebarFooter>
     </Sidebar>
   );
@@ -191,11 +198,20 @@ function Topbar({
   onSearch,
   onNewList,
   apiOk,
+  apiBuild,
 }: {
   onSearch: () => void;
   onNewList: () => void;
   apiOk: boolean;
+  apiBuild: BuildInfo | null;
 }) {
+  const drift = apiOk && buildsDiffer(apiBuild, dashboardBuild);
+  const apiTag = apiBuild && apiBuild.commit !== "none" ? shortCommit(apiBuild.commit) : null;
+  const apiTitle = !apiOk || !apiBuild
+    ? undefined
+    : `API build ${apiBuild.commit} — ${formatBuildTime(apiBuild.build_time)}` +
+      (drift ? " (differs from this dashboard's build)" : "");
+
   return (
     <header className="flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4 md:px-6">
       <SidebarTrigger className="size-10 md:hidden [&_svg]:size-5!" />
@@ -219,14 +235,18 @@ function Topbar({
       >
         <Search className="size-5" />
       </Button>
-      <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+      <span title={apiTitle} className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
         <span
           className={cn(
             "size-2 rounded-full",
-            apiOk ? "bg-emerald-500" : "bg-destructive",
+            !apiOk ? "bg-destructive" : drift ? "bg-amber-500" : "bg-emerald-500",
           )}
         />
-        <span className="hidden md:inline">{apiOk ? "API online" : "API offline"}</span>
+        <span className="hidden md:inline">
+          {apiOk ? "API online" : "API offline"}
+          {apiOk && apiTag ? ` · ${apiTag}` : ""}
+          {drift ? " · out of sync" : ""}
+        </span>
       </span>
       <Button onClick={onNewList} className="h-10 gap-1 px-3.5">
         <Plus className="size-5" />
@@ -262,6 +282,7 @@ export function AppShell({
   onSearch,
   onNewList,
   apiOk,
+  apiBuild,
   children,
 }: {
   screen: Screen | "list";
@@ -275,6 +296,7 @@ export function AppShell({
   onSearch: () => void;
   onNewList: () => void;
   apiOk: boolean;
+  apiBuild: BuildInfo | null;
   children: React.ReactNode;
 }) {
   return (
@@ -294,7 +316,7 @@ export function AppShell({
       />
       <SidebarInset className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="sticky top-0 z-30 w-full bg-background">
-          <Topbar onSearch={onSearch} onNewList={onNewList} apiOk={apiOk} />
+          <Topbar onSearch={onSearch} onNewList={onNewList} apiOk={apiOk} apiBuild={apiBuild} />
         </div>
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-7xl px-4 pt-8 pb-10 md:px-6">

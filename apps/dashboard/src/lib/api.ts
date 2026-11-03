@@ -1,3 +1,5 @@
+import type { BuildInfo } from "./version";
+
 export interface MailList {
   list_key: string;
   name: string;
@@ -133,6 +135,11 @@ export const api = {
     } catch {
       return false;
     }
+  },
+  version: async (): Promise<BuildInfo> => {
+    const res = await fetch(`${base()}/version`);
+    if (!res.ok) throw new ApiError(res.status, `version failed (${res.status})`);
+    return (await res.json()) as BuildInfo;
   },
 };
 

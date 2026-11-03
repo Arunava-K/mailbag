@@ -31,7 +31,8 @@ There is no lint setup in either app. CI (`.github/workflows/ci.yml`) runs `go v
 
 - Pushing to `main` **is the deploy**: `.github/workflows/docker.yml` builds both images and pushes to GHCR (`latest` + short-sha). The VPS (Dokploy) only ever pulls `ghcr.io/arunava-k/mailbag-{api,dashboard}:${TAG:-latest}` via `docker-compose.yml` — it never builds. Don't turn `docker-compose.yml` into a build-from-source file.
 - GHCR image paths are lowercase even though the GitHub owner is `Arunava-K`. Don't "fix" the casing.
-- The workflow is path-filtered (`apps/api/**`, `apps/dashboard/**`, `docker-compose.yml`, the workflow itself) — README-only changes don't deploy.
+- The workflow is path-filtered (`apps/api/**`, `apps/dashboard/**`, `VERSION`, `docker-compose.yml`, the workflow itself) — README-only changes don't deploy.
+- Versioning: repo-root `VERSION` is the only version number. `docker.yml` injects it plus `github.sha` and a UTC build time into both images (Go via `-ldflags -X mailbag/internal/version.*`, dashboard via `VITE_APP_*` and a generated `version.json`). Bumping `VERSION` alone is still a deploy trigger. Don't hardcode versions in either app.
 
 ## Non-obvious behavior
 
@@ -41,3 +42,4 @@ There is no lint setup in either app. CI (`.github/workflows/ci.yml`) runs `go v
 - `BASE_URL` must be correct in env — confirm/unsubscribe links are built from it.
 - Rate limiting derives the client IP as `CF-Connecting-IP` → rightmost `X-Forwarded-For` hop (leftmost is spoofable) → socket address; `website` is a honeypot field on `/v1/subscribe`, not real data.
 - Broadcasts are intentionally out of scope for V1 (collection + double opt-in + welcome mail only).
+- `GET /version` (public) and the dashboard's `/version.json` report `{version, commit, build_time}`; `/health` also carries `version`/`commit`. The dashboard fetches the API's build on load and shows an amber "out of sync" when the two SHAs differ — that means only one container got the newest image.

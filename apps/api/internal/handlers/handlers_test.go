@@ -658,6 +658,54 @@ func TestStats(t *testing.T) {
 	}
 }
 
+// Deploy verification: build identity must be readable without an admin key,
+// and /health must name the same build so uptime checks can spot a stale deploy.
+func TestVersionEndpointIsPublic(t *testing.T) {
+	s, _ := testServer(t)
+
+	resp, err := s.Client().Get(s.URL + "/version")
+	if err != nil {
+		t.Fatalf("GET /version: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("GET /version = %d", resp.StatusCode)
+	}
+	// The dashboard reads this cross-origin in production.
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want *", got)
+	}
+	var info struct {
+		Version   string `json:"version"`
+		Commit    string `json:"commit"`
+		BuildTime string `json:"build_time"`
+		Go        string `json:"go"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		t.Fatalf("decode /version: %v", err)
+	}
+	if info.Version == "" || info.Commit == "" || info.BuildTime == "" || info.Go == "" {
+		t.Fatalf("incomplete build info: %+v", info)
+	}
+
+	hresp, err := s.Client().Get(s.URL + "/health")
+	if err != nil {
+		t.Fatalf("GET /health: %v", err)
+	}
+	defer hresp.Body.Close()
+	var health struct {
+		Status  string `json:"status"`
+		Version string `json:"version"`
+		Commit  string `json:"commit"`
+	}
+	if err := json.NewDecoder(hresp.Body).Decode(&health); err != nil {
+		t.Fatalf("decode /health: %v", err)
+	}
+	if health.Status != "ok" || health.Version != info.Version || health.Commit != info.Commit {
+		t.Fatalf("/health = %+v, /version = %+v", health, info)
+	}
+}
+
 func TestPublicCORSPreflight(t *testing.T) {
 	s, _ := testServer(t)
 	req, _ := http.NewRequest("OPTIONS", s.URL+"/v1/subscribe", nil)

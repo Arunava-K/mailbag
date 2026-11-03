@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"mailbag/internal/mailer"
+	"mailbag/internal/version"
 )
 
 // Admin handles /admin/* (Bearer ADMIN_API_KEY).
@@ -145,7 +146,14 @@ func (a *Admin) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/stats", a.cors(a.auth(a.stats)))
 	mux.HandleFunc("/admin/export", a.cors(a.auth(a.exportCSV)))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]string{"status": "ok"})
+		writeJSON(w, 200, map[string]string{"status": "ok", "version": version.Version, "commit": version.Commit})
+	})
+	// Public build identity — lets a deploy be verified from the outside
+	// (`curl $API/version`) without an admin key. CORS is open because the
+	// dashboard reads it cross-origin in production; nothing here is sensitive.
+	mux.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		writeJSON(w, 200, version.Get())
 	})
 }
 

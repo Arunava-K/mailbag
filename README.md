@@ -11,6 +11,8 @@ Single Go binary. Native forms on your sites POST to it. DB: Turso (set `TURSO_*
 
 ## API
 
+- `GET /health` → `{status: "ok", version, commit}` — liveness + which build answers
+- `GET /version` → `{version, commit, build_time, go}` — public build identity, no key needed
 - `POST /v1/subscribe` `{list_key, email, metadata?, website?}` → `{status: pending|confirmed, position?}`
 - `GET /v1/confirm?token=` → confirms + sends welcome mail (or redirects to `confirm_redirect`)
 - `POST /v1/unsubscribe` `{list_key, email}` + `GET /v1/unsubscribe?list_key=&email=` (email links)
@@ -46,7 +48,7 @@ Images are built by GitHub Actions (`.github/workflows/docker.yml`) on every pus
    - `TURSO_DATABASE_URL=libsql://xxx.turso.io` + `TURSO_AUTH_TOKEN=...` (recommended)
    - `SMTP_HOST/PORT/USER/PASS/FROM` and/or `PLUNK_API_KEY` (required — without a sender, confirms are logged + skipped)
    - Optional: `TAG=<short-sha>` to pin both services to one build instead of `latest`.
-6. Deploy. Test: `curl https://mailbag-api.steinerandco.space/health` → `{"status":"ok"}`.
+6. Deploy. Test: `curl https://mailbag-api.steinerandco.space/version` → the version, git SHA, and build time that is now live; `curl https://mailbag.steinerandco.space/version.json` → the dashboard's.
 7. Create first list:
    ```bash
    curl -X POST https://mailbag-api.steinerandco.space/admin/lists \
@@ -54,6 +56,22 @@ Images are built by GitHub Actions (`.github/workflows/docker.yml`) on every pus
      -d '{"name":"My Newsletter","type":"newsletter","sender_name":"Me","sender_email":"hello@yourdomain.com","provider":"smtp"}'
    ```
    → `{"list_key":"pk_..."}` — paste into your Pages forms.
+
+## Versioning & deploy verification
+
+`VERSION` at the repo root is the one human-readable version for both apps. Bump it in the PR that ships the change — the docker workflow reads it, adds the git SHA and a UTC build timestamp, and bakes all three into both images:
+
+- **API**: linked in via `-ldflags -X mailbag/internal/version.*`, served by `GET /version`, echoed in `/health`, logged at startup as `mailbag 0.1.0 (7d53563, built 2026-11-03T06:39:09Z)`.
+- **Dashboard**: `VITE_APP_*` baked into the JS by Vite, plus a `version.json` next to `index.html` for curl. Shown in the sidebar footer (`v0.1.0 · 7d53563`) and in Settings → Builds.
+
+A deploy can be checked end to end without a browser:
+
+```bash
+curl -s https://mailbag-api.steinerandco.space/version
+curl -s https://mailbag.steinerandco.space/version.json
+```
+
+The dashboard compares its own SHA with the API's on load: same commit → green "API online"; a mismatch turns the dot amber and reads "out of sync", which means only one of the two containers picked up the new image.
 
 Footprint (measured): API ~21 MB image / ~3 MB RAM idle; dashboard ~93 MB image (nginx) / ~5 MB RAM; ~0.5 KB SQLite per pending subscriber. Safe to co-host on your existing VPS.
 
@@ -63,6 +81,7 @@ Footprint (measured): API ~21 MB image / ~3 MB RAM idle; dashboard ~93 MB image 
 cp .env.example .env   # set BASE_URL=http://localhost:8080, ADMIN_API_KEY=test
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 curl localhost:8080/health   # api
+curl localhost:8080/version  # api build identity
 curl localhost:3000/          # dashboard (VITE_MAILBAG_URL=/api default)
 
 # dashboard hot-reload instead (needs the api above on :8080)

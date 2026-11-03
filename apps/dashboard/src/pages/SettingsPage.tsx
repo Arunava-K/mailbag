@@ -5,14 +5,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PageHeader } from "../components/app-shell";
 import { useTheme } from "@/components/watermelon/astrix-dashboard/components/astrix/theme-provider";
 import type { ToastFn } from "../lib/toast";
+import { buildLabel, buildsDiffer, dashboardBuild, formatBuildTime, type BuildInfo } from "@/lib/version";
 import { cn } from "@/lib/utils";
 
 export function SettingsPage({
-  collectorUrl, adminKey, apiOk, toast, onLock,
+  collectorUrl, adminKey, apiOk, apiBuild, toast, onLock,
 }: {
   collectorUrl: string;
   adminKey: string;
   apiOk: boolean;
+  apiBuild: BuildInfo | null;
   toast: ToastFn;
   onLock: () => void;
 }) {
@@ -52,6 +54,25 @@ export function SettingsPage({
               </dd>
             </div>
           </dl>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Builds</CardTitle>
+          <CardDescription>
+            What each container is running. Reload after a deploy to compare with the tag you just shipped.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <dl className="space-y-2 text-sm">
+            <BuildRow label="Dashboard" info={dashboardBuild} />
+            <BuildRow label="API" info={apiBuild} />
+          </dl>
+          {apiOk && buildsDiffer(apiBuild, dashboardBuild) && (
+            <p className="mt-3 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+              API and dashboard builds differ — only one of the two containers has the latest deploy.
+            </p>
+          )}
         </CardContent>
       </Card>
       <Card>
@@ -100,5 +121,23 @@ export function SettingsPage({
       </Card>
       </div>
     </>
+  );
+}
+
+function BuildRow({ label, info }: { label: string; info: BuildInfo | null }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="text-right font-mono text-xs">
+        {info ? (
+          <>
+            <span>{buildLabel(info)}</span>
+            <span className="block text-[11px] text-muted-foreground">{formatBuildTime(info.build_time)}</span>
+          </>
+        ) : (
+          <span className="text-muted-foreground">not reported</span>
+        )}
+      </dd>
+    </div>
   );
 }
