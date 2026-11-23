@@ -5,6 +5,7 @@ const COLLAPSED_KEY = "mb-sidebar-collapsed";
 interface ShellState {
   /** desktop sidebar is the 56px rail (persisted) */
   collapsed: boolean;
+  setCollapsed: (collapsed: boolean) => void;
   toggleCollapsed: () => void;
   /** < 1024px: sidebar sheet */
   mobileNavOpen: boolean;
@@ -39,7 +40,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
 
   const toggleCollapsed = useCallback(() => setCollapsed((c) => !c), []);
   const value = useMemo(
-    () => ({ collapsed, toggleCollapsed, mobileNavOpen, setMobileNavOpen, paletteOpen, setPaletteOpen, newListOpen, setNewListOpen }),
+    () => ({ collapsed, setCollapsed, toggleCollapsed, mobileNavOpen, setMobileNavOpen, paletteOpen, setPaletteOpen, newListOpen, setNewListOpen }),
     [collapsed, toggleCollapsed, mobileNavOpen, paletteOpen, newListOpen],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

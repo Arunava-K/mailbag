@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   Activity,
   ChevronDown,
@@ -8,7 +8,6 @@ import {
   Mail,
   Monitor,
   Moon,
-  PanelLeft,
   Plus,
   Search,
   Settings,
@@ -24,7 +23,7 @@ import { useTheme, type ThemeMode } from "@/lib/theme";
 import { useApiStatus, useBuildDrift, useLists, type ApiStatus } from "@/lib/queries";
 import { buildLabel } from "@/lib/version";
 import type { MailList } from "@/lib/api";
-import { Kbd, modK, modKey } from "../Kbd";
+import { Kbd, modK } from "../Kbd";
 import { TypeDot } from "../TypeDot";
 import { IconBtn } from "../Btn";
 import { NavItem, PendingBadge, RailLink, Tip } from "./SidebarParts";
@@ -163,10 +162,28 @@ function Logo({ className }: { className?: string }) {
   );
 }
 
-/** Full 232px sidebar. `onNavigate` closes the mobile sheet after a link is followed. */
-function SidebarExpanded({ onNavigate, showCollapse }: { onNavigate?: () => void; showCollapse: boolean }) {
+const SIDEBAR_WIDTH_KEY = "mb-sidebar-width";
+const DEFAULT_WIDTH = 232;
+const MIN_WIDTH = 200;
+const MAX_WIDTH = 360;
+const COLLAPSE_WIDTH = 160;
+const RAIL_WIDTH = 56;
+
+const clampWidth = (width: number) => Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(width)));
+
+function initialSidebarWidth() {
+  try {
+    const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    return stored >= MIN_WIDTH && stored <= MAX_WIDTH ? stored : DEFAULT_WIDTH;
+  } catch {
+    return DEFAULT_WIDTH;
+  }
+}
+
+/** Resizable desktop sidebar. `onNavigate` closes the mobile sheet after a link is followed. */
+function SidebarExpanded({ onNavigate }: { onNavigate?: () => void }) {
   const { lists, pending, loaded } = useSidebarData();
-  const { toggleCollapsed, setPaletteOpen, setNewListOpen } = useShell();
+  const { setPaletteOpen, setNewListOpen } = useShell();
   const [open, setOpen] = useState(() => localStorage.getItem(LISTS_OPEN_KEY) !== "0");
   const toggleOpen = () =>
     setOpen((o) => {
@@ -178,17 +195,10 @@ function SidebarExpanded({ onNavigate, showCollapse }: { onNavigate?: () => void
     <div className="flex h-full min-h-0 flex-col px-2 py-2.5">
       <div className="flex items-center gap-[9px] px-1 pb-3">
         <Logo />
-        <div className="flex-1 leading-tight">
+        <div className="min-w-0 flex-1 leading-tight">
           <b className="block text-[13.5px] font-semibold">Mailbag</b>
           <span className="text-[11.5px] text-faint">Steiner &amp; Co</span>
         </div>
-        {showCollapse && (
-          <Tip label="Collapse sidebar" keys={`${modKey} \\`} side="bottom">
-            <IconBtn label="Collapse sidebar" onClick={toggleCollapsed}>
-              <PanelLeft />
-            </IconBtn>
-          </Tip>
-        )}
       </div>
 
       <button
@@ -199,8 +209,8 @@ function SidebarExpanded({ onNavigate, showCollapse }: { onNavigate?: () => void
         }}
         className="mb-3 flex h-[30px] items-center gap-[7px] rounded-[7px] border border-line bg-panel px-2 text-faint hover:bg-hover"
       >
-        <Search className="size-[15px]" aria-hidden />
-        <span className="flex-1 text-left">Search or jump to…</span>
+        <Search className="size-[15px] shrink-0" aria-hidden />
+        <span className="min-w-0 flex-1 truncate text-left">Search or jump to…</span>
         <Kbd>{modK}</Kbd>
       </button>
 
@@ -264,15 +274,13 @@ function SidebarExpanded({ onNavigate, showCollapse }: { onNavigate?: () => void
 /** 56px collapsed rail: icons with tooltips. */
 function SidebarRail() {
   const { lists, pending } = useSidebarData();
-  const { toggleCollapsed, setPaletteOpen, setNewListOpen } = useShell();
+  const { setPaletteOpen, setNewListOpen } = useShell();
   const status = useApiStatus();
   return (
     <div className="flex h-full min-h-0 flex-col items-center gap-0.5 py-2.5">
-      <Tip label="Expand sidebar" keys={`${modKey} \\`}>
-        <button type="button" onClick={toggleCollapsed} aria-label="Expand sidebar" className="mb-2 rounded-[7px]">
-          <Logo />
-        </button>
-      </Tip>
+      <div className="mb-2">
+        <Logo />
+      </div>
       <Tip label="Search or jump to…" keys={modK}>
         <IconBtn label="Search" onClick={() => setPaletteOpen(true)} className="mb-1.5 size-[34px] border border-line bg-panel">
           <Search />
@@ -323,23 +331,205 @@ function SidebarRail() {
   );
 }
 
-/** Desktop docked sidebar (232px or 56px rail). Hidden below 1024px. */
+/** Desktop docked sidebar, resizable from its right edge. Hidden below 1024px. */
 export function Sidebar() {
-  const { collapsed } = useShell();
+  const { collapsed, setCollapsed } = useShell();
+  const [width, setWidth] = useState(initialSidebarWidth);
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
+  const [settling, setSettling] = useState(false);
+  const aside = useRef<HTMLElement | null>(null);
+  const settleTimer = useRef<number | null>(null);
+  const drag = useRef<{
+    pointerId: number;
+    startX: number;
+    startWidth: number;
+    currentWidth: number;
+    cursor: string;
+    userSelect: string;
+  } | null>(null);
+  const dragging = dragWidth !== null;
+  const visualWidth = dragWidth ?? (collapsed ? RAIL_WIDTH : width);
+  const panelWidth = dragging && collapsed ? RAIL_WIDTH : visualWidth;
+  const previewing = dragging || settling;
+  const expandedOpacity = collapsed ? 0 : 1;
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+    } catch {
+      /* ignore */
+    }
+  }, [width]);
+
+  useEffect(
+    () => () => {
+      if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+      if (drag.current) {
+        document.body.style.cursor = drag.current.cursor;
+        document.body.style.userSelect = drag.current.userSelect;
+      }
+    },
+    [],
+  );
+
+  const interruptSettle = () => {
+    if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+    settleTimer.current = null;
+    setSettling(false);
+  };
+
+  const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (drag.current || !e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+    e.preventDefault();
+    interruptSettle();
+    const currentWidth = aside.current?.getBoundingClientRect().width ?? (collapsed ? RAIL_WIDTH : width);
+    e.currentTarget.focus({ preventScroll: true });
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startWidth: currentWidth,
+      currentWidth,
+      cursor: document.body.style.cursor,
+      userSelect: document.body.style.userSelect,
+    };
+    document.body.style.cursor = collapsed ? "pointer" : "col-resize";
+    document.body.style.userSelect = "none";
+    setDragWidth(currentWidth);
+  };
+
+  const moveDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const current = drag.current;
+    if (!current || current.pointerId !== e.pointerId || collapsed) return;
+    const next = current.startWidth + e.clientX - current.startX;
+    const preview = Math.min(MAX_WIDTH, Math.max(COLLAPSE_WIDTH, Math.round(next)));
+    current.currentWidth = preview;
+    setDragWidth(preview);
+  };
+
+  const endDrag = (e: ReactPointerEvent<HTMLDivElement>, cancelled = false) => {
+    const current = drag.current;
+    if (!current || current.pointerId !== e.pointerId) return;
+    drag.current = null;
+    document.body.style.cursor = current.cursor;
+    document.body.style.userSelect = current.userSelect;
+    if (!cancelled) {
+      const nextCollapsed = collapsed ? false : current.currentWidth <= COLLAPSE_WIDTH;
+      setCollapsed(nextCollapsed);
+      if (!nextCollapsed) setWidth(collapsed ? width : clampWidth(current.currentWidth));
+    }
+    setDragWidth(null);
+    setSettling(true);
+    settleTimer.current = window.setTimeout(() => {
+      settleTimer.current = null;
+      setSettling(false);
+    }, 200);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  const resizeWithKeyboard = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowLeft") {
+      if (collapsed) return;
+      e.preventDefault();
+      interruptSettle();
+      if (width - 16 < MIN_WIDTH) setCollapsed(true);
+      else setWidth(clampWidth(width - 16));
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      interruptSettle();
+      if (collapsed) setCollapsed(false);
+      else setWidth(clampWidth(width + 16));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      interruptSettle();
+      setCollapsed(true);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      interruptSettle();
+      setCollapsed(false);
+      setWidth(MAX_WIDTH);
+    }
+  };
+
   return (
     <aside
+      ref={aside}
       aria-label="Sidebar"
-      className={cn(
-        "hidden shrink-0 border-r border-line bg-side transition-[width] duration-200 lg:block",
-        collapsed ? "w-14" : "w-[232px]",
-      )}
+      style={{
+        width: panelWidth,
+        transition: settling ? "width 200ms cubic-bezier(0.32, 0.72, 0, 1)" : undefined,
+      }}
+      className="relative hidden shrink-0 border-r border-line bg-side lg:block"
     >
-      {collapsed ? <SidebarRail /> : <SidebarExpanded showCollapse />}
+      {previewing ? (
+        <>
+          <div
+            aria-hidden={expandedOpacity > 0.5}
+            inert={expandedOpacity > 0.5}
+            className="absolute inset-0"
+            style={{
+              opacity: 1 - expandedOpacity,
+              pointerEvents: expandedOpacity > 0.5 ? "none" : "auto",
+              transition: settling ? "opacity 120ms ease-out" : undefined,
+            }}
+          >
+            <SidebarRail />
+          </div>
+          <div
+            aria-hidden={expandedOpacity <= 0.5}
+            inert={expandedOpacity <= 0.5}
+            className="absolute inset-0"
+            style={{
+              opacity: expandedOpacity,
+              pointerEvents: expandedOpacity > 0.5 ? "auto" : "none",
+              transition: settling ? "opacity 120ms ease-out" : undefined,
+            }}
+          >
+            <SidebarExpanded />
+          </div>
+        </>
+      ) : (
+        <div className="h-full">{collapsed ? <SidebarRail /> : <SidebarExpanded />}</div>
+      )}
+      <div
+        role="separator"
+        tabIndex={0}
+        aria-label="Resize sidebar"
+        aria-orientation="vertical"
+        aria-valuemin={RAIL_WIDTH}
+        aria-valuemax={MAX_WIDTH}
+        aria-valuenow={Math.round(visualWidth)}
+        aria-valuetext={dragging || !collapsed ? `${Math.round(visualWidth)} pixels` : "Collapsed"}
+        title={collapsed ? "Click to expand" : "Drag to resize · Double-click to reset"}
+        onPointerDown={startDrag}
+        onPointerMove={moveDrag}
+        onPointerUp={endDrag}
+        onPointerCancel={(e) => endDrag(e, true)}
+        onLostPointerCapture={(e) => endDrag(e, true)}
+        onKeyDown={resizeWithKeyboard}
+        onDoubleClick={() => {
+          interruptSettle();
+          setCollapsed(false);
+          setWidth(DEFAULT_WIDTH);
+        }}
+        className={cn(
+          "group/resize absolute inset-y-0 -right-1 z-30 w-2 touch-none focus-visible:outline-none",
+          collapsed ? "cursor-pointer" : "cursor-col-resize",
+        )}
+      >
+        <span
+          aria-hidden
+          className={cn(
+            "absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors",
+            dragging ? "bg-brand" : "bg-transparent group-hover/resize:bg-brand/60 group-focus-visible/resize:bg-brand/60",
+          )}
+        />
+      </div>
     </aside>
   );
 }
 
 /** Sidebar body for the mobile sheet. */
 export function SidebarSheetBody({ onNavigate }: { onNavigate: () => void }) {
-  return <SidebarExpanded showCollapse={false} onNavigate={onNavigate} />;
+  return <SidebarExpanded onNavigate={onNavigate} />;
 }
