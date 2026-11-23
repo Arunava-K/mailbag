@@ -1,54 +1,35 @@
-import { useEffect, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { PageHeader } from "../components/app-shell";
-import { ContactsTable } from "../components/ContactsTable";
-import type { MailList } from "../lib/api";
-import type { ToastFn } from "../lib/toast";
+import { Download } from "lucide-react";
+import { Btn } from "@/components/Btn";
+import { ContactsTable } from "@/components/contacts/ContactsTable";
+import { Page } from "@/components/shell/Page";
+import { useExportCsv } from "@/lib/download";
+import { useLists } from "@/lib/queries";
+import { useSearchParams } from "@/lib/router";
 
-export function ContactsPage({
-  lists, adminKey, toast, refresh,
-}: {
-  lists: MailList[];
-  adminKey: string;
-  toast: ToastFn;
-  refresh: () => void;
-}) {
-  const [listKey, setListKey] = useState(lists[0]?.list_key ?? "");
-  useEffect(() => {
-    if (!lists.find((l) => l.list_key === listKey)) setListKey(lists[0]?.list_key ?? "");
-  }, [lists, listKey]);
+/** /contacts: every list's contacts in one table. Export is per list, so it needs the list filter. */
+export function ContactsPage() {
+  const [params] = useSearchParams();
+  const lists = useLists();
+  const { exportCsv, exporting } = useExportCsv();
+  const list = lists.data?.find((l) => l.list_key === params.get("list"));
 
-  if (lists.length === 0) {
-    return (
-      <>
-        <PageHeader title="Contacts" sub="Everyone who signed up, across every list." />
-        <Card>
-          <CardContent className="p-8 text-center text-sm text-muted-foreground">
-            Create a list first — contacts live on lists.
-          </CardContent>
-        </Card>
-      </>
-    );
-  }
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title="Contacts"
-        sub="Everyone who signed up, across every list."
-        action={
-          <select
-            value={listKey}
-            onChange={(e) => setListKey(e.target.value)}
-            aria-label="Choose list"
-            className="h-10 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] md:w-72 dark:bg-input/30"
-          >
-            {lists.map((l) => (
-              <option key={l.list_key} value={l.list_key}>{l.name}</option>
-            ))}
-          </select>
-        }
-      />
-      {listKey && <ContactsTable listKey={listKey} adminKey={adminKey} toast={toast} refresh={refresh} />}
-    </div>
+    <Page
+      bare
+      crumbs={[{ label: "Contacts" }]}
+      actions={
+        <Btn
+          aria-label="Export CSV"
+          disabled={!list || exporting}
+          onClick={() => list && void exportCsv(list.list_key, list.name)}
+          title={list ? `Download ${list.name} as CSV` : "Filter to one list to export it"}
+        >
+          <Download />
+          <span className="max-sm:hidden">{exporting ? "Exporting…" : "Export CSV"}</span>
+        </Btn>
+      }
+    >
+      <ContactsTable />
+    </Page>
   );
 }
