@@ -92,6 +92,41 @@ func EnsureSchema(database *sql.DB) error {
 			return fmt.Errorf("schema: %w", err)
 		}
 	}
+	return addColumnIfMissing(database, "contacts", "unsubscribed_at", "DATETIME")
+}
+
+// addColumnIfMissing is an idempotent ALTER TABLE ADD COLUMN: existing local
+// SQLite and Turso databases already have the table, and SQLite has no
+// "ADD COLUMN IF NOT EXISTS". The column is nullable.
+func addColumnIfMissing(database *sql.DB, table, column, decl string) error {
+	rows, err := database.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return fmt.Errorf("schema: table_info: %w", err)
+	}
+	found := false
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return fmt.Errorf("schema: table_info scan: %w", err)
+		}
+		if strings.EqualFold(name, column) {
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("schema: table_info: %w", err)
+	}
+	rows.Close() // release the connection before the ALTER (SQLite uses one)
+	if found {
+		return nil
+	}
+	if _, err := database.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + decl); err != nil {
+		return fmt.Errorf("schema: add %s.%s: %w", table, column, err)
+	}
 	return nil
 }
 

@@ -18,12 +18,15 @@ Single Go binary. Native forms on your sites POST to it. DB: Turso (set `TURSO_*
 - `POST /v1/unsubscribe` `{list_key, email}` + `GET /v1/unsubscribe?list_key=&email=` (email links)
 - Admin (header `Authorization: Bearer $ADMIN_API_KEY`):
   - `POST /admin/lists` `{name, type: newsletter|waitlist, sender_name, sender_email, provider: smtp|plunk, welcome_subject, welcome_body, confirm_redirect}` → `{list_key}`
-  - `GET /admin/lists` → counts per list
+  - `GET /admin/lists` → per list: settings, `confirmed`/`pending`/`unsubscribed` counts, `created_at`, `stale_pending` (pending for more than 48h)
   - `GET /admin/export?list_key=` → CSV (`email,status,metadata,confirmed_at,created_at`, RFC-4180 quoted)
-  - `GET /admin/contacts?list_key=&status=&q=&limit=&offset=` → paged contacts
+  - `GET /admin/contacts?list_key=&status=&q=&pending_older_than=&limit=&offset=` → `{total, contacts}`, newest first. `list_key` is optional (omit to search every list). `pending_older_than=N` (hours, int > 0, else 400) keeps only `pending` contacts created more than N hours ago. Rows: `email, status, position, metadata, confirmed_at, created_at, list_key, list_name, unsubscribed_at` (null until the contact unsubscribes; older unsubscribes have no time)
   - `POST /admin/contacts/confirm` `{list_key, email}` — mark confirmed without sending mail (stuck pending)
   - `POST /admin/contacts/resend` `{list_key, email}` — fresh token + re-send confirm email
   - `DELETE /admin/contacts?list_key=&email=` — remove a contact and its tokens
+  - `POST /admin/contacts/bulk` `{action: confirm|resend|delete, contacts: [{list_key, email}]}` — 1 to 500 contacts (400 otherwise), same semantics as the single endpoints; emails are trimmed and lower-cased. `confirm` and `resend` report already-confirmed contacts as failed without changing their history. → `200 {ok: <n succeeded>, failed: [{list_key, email, error}]}`
+  - `GET /admin/stats?days=7|14|30|90` → `{lists, confirmed, pending, unsubscribed, stale_pending, by_day, days, series, period, prev_period, list_series}`. `days` defaults to 14; other values clamp to the nearest allowed one. `series` is one zero-filled `{day, confirmed, pending, unsubscribed}` entry per UTC day (oldest first, today included): each signup lands on its `created_at` day, split by current status. `period` / `prev_period` are `{signups, confirmed, unsubscribed}` for the last N days and the N days before (by current status). `list_series` maps each `list_key` (every list) to an array aligned with `series` of that day's signups that are now confirmed. `by_day` is unchanged (confirmed, last 14 days)
+  - `GET /admin/activity?limit=50&list_key=&cursor=` → `{events: [{type: signup|confirmed|unsubscribed, email, list_key, list_name, at}], next_cursor}`, newest first, derived from `created_at` / `confirmed_at` / `unsubscribed_at`. `limit` 1-200 and `list_key` optional. Pass the returned `next_cursor` as `cursor` for the next page; it includes tie-breakers and handles mixed stored timestamp formats. Legacy `before=` remains an exclusive timestamp-only filter.
 
 CORS is open (`*`) on `/v1/*` so any static site can `fetch()` it directly. Spam defense: IP rate limit (20/min, `X-Forwarded-For` aware behind Traefik), honeypot `website` field, email validation.
 

@@ -170,7 +170,7 @@ func (p *Public) subscribe(w http.ResponseWriter, r *http.Request) {
 	// raced under concurrent signups (both would claim the same spot).
 	_, err = p.DB.Exec(`INSERT INTO contacts(list_id, email, status, position, metadata)
 		VALUES(?, ?, 'pending', (SELECT COUNT(*) FROM contacts WHERE list_id = ?) + 1, ?)
-		ON CONFLICT(list_id, email) DO UPDATE SET status='pending', metadata=excluded.metadata`,
+		ON CONFLICT(list_id, email) DO UPDATE SET status='pending', metadata=excluded.metadata, unsubscribed_at=NULL`,
 		listID, req.Email, listID, req.Metadata)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "db error"})
@@ -212,7 +212,7 @@ func (p *Public) confirm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid or expired token", 400)
 		return
 	}
-	_, _ = p.DB.Exec(`UPDATE contacts SET status='confirmed', confirmed_at=CURRENT_TIMESTAMP WHERE list_id=? AND email=?`, listID, email)
+	_, _ = p.DB.Exec(`UPDATE contacts SET status='confirmed', confirmed_at=CURRENT_TIMESTAMP, unsubscribed_at=NULL WHERE list_id=? AND email=?`, listID, email)
 	_, _ = p.DB.Exec(`DELETE FROM tokens WHERE token=?`, token)
 
 	unsub := unsubscribeURL(p.Cfg.BaseURL, listID, email)
@@ -242,7 +242,7 @@ func (p *Public) unsubscribe(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
 			listKey, email := r.URL.Query().Get("list_key"), strings.ToLower(r.URL.Query().Get("email"))
 			if listKey != "" && email != "" {
-				_, _ = p.DB.Exec(`UPDATE contacts SET status='unsubscribed' WHERE list_id=? AND email=?`, listKey, email)
+				_, _ = p.DB.Exec(`UPDATE contacts SET status='unsubscribed', unsubscribed_at=CURRENT_TIMESTAMP WHERE list_id=? AND email=?`, listKey, email)
 				w.Header().Set("Content-Type", "text/html")
 				_, _ = w.Write([]byte(`<html><body style="font-family:sans-serif;text-align:center;padding:64px"><h2>Unsubscribed.</h2></body></html>`))
 				return
@@ -257,6 +257,6 @@ func (p *Public) unsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
-	_, _ = p.DB.Exec(`UPDATE contacts SET status='unsubscribed' WHERE list_id=? AND email=?`, req.ListKey, req.Email)
+	_, _ = p.DB.Exec(`UPDATE contacts SET status='unsubscribed', unsubscribed_at=CURRENT_TIMESTAMP WHERE list_id=? AND email=?`, req.ListKey, req.Email)
 	writeJSON(w, 200, map[string]string{"status": "unsubscribed"})
 }
